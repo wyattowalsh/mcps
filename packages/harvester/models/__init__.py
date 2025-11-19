@@ -14,8 +14,22 @@ from .models import (
     Tool,
     ToolEmbedding,
 )
+from .social import (
+    Article,
+    ArticlePlatform,
+    Company,
+    ContentCategory,
+    Discussion,
+    Event,
+    SentimentScore,
+    SocialPlatform,
+    SocialPost,
+    Video,
+    VideoPlatform,
+)
 
 __all__ = [
+    # Core models
     "Server",
     "Tool",
     "ToolEmbedding",
@@ -25,4 +39,17 @@ __all__ = [
     "Release",
     "Contributor",
     "ProcessingLog",
+    # Social media models
+    "SocialPost",
+    "Video",
+    "Article",
+    "Discussion",
+    "Event",
+    "Company",
+    # Enums
+    "SocialPlatform",
+    "VideoPlatform",
+    "ArticlePlatform",
+    "ContentCategory",
+    "SentimentScore",
 ]

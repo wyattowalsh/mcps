@@ -772,6 +772,123 @@ async def _show_stats() -> None:
         await close_db()
 
 
+@app.command()
+def harvest_social(
+    platform: str = typer.Option(
+        "all",
+        "--platform",
+        "-p",
+        help="Platform to harvest (reddit, twitter, youtube, or all)",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Harvest social media content about MCP from Reddit, Twitter, and YouTube.
+
+    This command fetches posts, tweets, and videos mentioning MCP servers
+    and discussions from various social media platforms.
+
+    Examples:
+        # Harvest from all platforms
+        python -m packages.harvester.cli harvest-social --platform all
+
+        # Harvest Reddit only
+        python -m packages.harvester.cli harvest-social --platform reddit
+
+        # Harvest Twitter only
+        python -m packages.harvester.cli harvest-social --platform twitter
+
+        # Harvest YouTube only
+        python -m packages.harvester.cli harvest-social --platform youtube
+    """
+    configure_logging(log_level)
+    logger.info(f"Starting social media harvest (platform: {platform})...")
+
+    try:
+        asyncio.run(_run_social_harvest(platform))
+    except Exception as e:
+        logger.error(f"Social media harvest failed: {e}")
+        sys.exit(1)
+
+
+async def _run_social_harvest(platform: str) -> None:
+    """Async implementation of harvest-social command.
+
+    Args:
+        platform: Platform to harvest (reddit, twitter, youtube, or all)
+    """
+    from packages.harvester.adapters.reddit import RedditHarvester
+    from packages.harvester.adapters.twitter import TwitterHarvester
+    from packages.harvester.adapters.youtube import YouTubeHarvester
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            total_items = 0
+            errors = []
+
+            # Reddit
+            if platform in ("all", "reddit"):
+                try:
+                    logger.info("Harvesting Reddit...")
+                    reddit = RedditHarvester()
+                    result = await reddit.harvest(session)
+                    total_items += result["total_posts"]
+                    errors.extend(result.get("errors", []))
+                    logger.success(f"Reddit: {result['total_posts']} posts harvested")
+                except Exception as e:
+                    logger.error(f"Reddit harvest failed: {e}")
+                    errors.append({"platform": "reddit", "error": str(e)})
+
+            # Twitter
+            if platform in ("all", "twitter"):
+                try:
+                    logger.info("Harvesting Twitter...")
+                    twitter = TwitterHarvester()
+                    result = await twitter.harvest(session)
+                    total_items += result["total_tweets"]
+                    errors.extend(result.get("errors", []))
+                    logger.success(f"Twitter: {result['total_tweets']} tweets harvested")
+                except Exception as e:
+                    logger.error(f"Twitter harvest failed: {e}")
+                    errors.append({"platform": "twitter", "error": str(e)})
+
+            # YouTube
+            if platform in ("all", "youtube"):
+                try:
+                    logger.info("Harvesting YouTube...")
+                    youtube = YouTubeHarvester()
+                    result = await youtube.harvest(session)
+                    total_items += result["total_videos"]
+                    errors.extend(result.get("errors", []))
+                    logger.success(f"YouTube: {result['total_videos']} videos harvested")
+                except Exception as e:
+                    logger.error(f"YouTube harvest failed: {e}")
+                    errors.append({"platform": "youtube", "error": str(e)})
+
+            # Summary
+            typer.echo(f"\n=== Social Media Harvest Complete ===\n")
+            typer.echo(f"Total items harvested: {total_items}")
+
+            if errors:
+                typer.echo(f"\nErrors: {len(errors)}")
+                for error in errors:
+                    typer.echo(f"  - {error}")
+            else:
+                typer.echo("\nNo errors encountered!")
+
+            typer.echo()
+
+    finally:
+        await close_db()
+        await close_client()
+
+
 def main() -> None:
     """Main entry point for the CLI."""
     app()

@@ -1,7 +1,7 @@
 """Adapters - Source-specific logic.
 
-This package contains adapters for different data sources (GitHub, NPM, PyPI, etc.)
-and protocols (MCP, etc.).
+This package contains adapters for different data sources (GitHub, NPM, PyPI, etc.),
+protocols (MCP, etc.), and social media platforms (Reddit, Twitter, YouTube).
 """
 
 from typing import Optional
@@ -11,14 +11,23 @@ from packages.harvester.adapters.github import GitHubHarvester
 from packages.harvester.adapters.http import HTTPHarvester
 from packages.harvester.adapters.npm import NPMHarvester
 from packages.harvester.adapters.pypi import PyPIHarvester
+from packages.harvester.adapters.reddit import RedditHarvester
+from packages.harvester.adapters.twitter import TwitterHarvester
+from packages.harvester.adapters.youtube import YouTubeHarvester
 from packages.harvester.core.models import HostType
 
 __all__ = [
+    # Code repository adapters
     "GitHubHarvester",
     "NPMHarvester",
     "PyPIHarvester",
     "DockerHarvester",
     "HTTPHarvester",
+    # Social media adapters
+    "RedditHarvester",
+    "TwitterHarvester",
+    "YouTubeHarvester",
+    # Utilities
     "get_harvester_for_type",
 ]
 

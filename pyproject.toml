@@ -40,6 +40,16 @@ dependencies = [
     # API Framework (for apps/api)
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
+
+    # Social Media APIs
+    "praw>=7.8.1",  # Reddit API (synchronous, we'll wrap in asyncio)
+    "tweepy>=4.15.0",  # Twitter/X API
+    "google-api-python-client>=2.150.0",  # YouTube Data API
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.0",
+
+    # NLP & Sentiment Analysis
+    "vaderSentiment>=3.3.2",  # Sentiment analysis
 ]
 
 [dependency-groups]
@@ -61,13 +71,13 @@ docs = [
     "sphinx-togglebutton>=0.3.0",
     "sphinxemoji>=0.3.0",
     "sphinxcontrib-mermaid>=0.9.0",
-    "autodoc2>=0.5.0",
+    # "autodoc2>=0.5.0",  # Temporarily disabled due to availability issues
     "autoclasstoc>=1.6.0",
     "sphinx-click>=5.0.0",
     "sphinx-jsonschema>=1.19.0",
     "sphinxcontrib-httpdomain>=1.8.0",
-    "sphinx-git>=11.0.0",
-    "hoverxref>=1.3.0",
+    # "sphinx-git>=11.0.0",  # Temporarily disabled
+    # "hoverxref>=1.3.0",  # Temporarily disabled
     "sphinx-sitemap>=2.5.0",
     "sphinx-notfound-page>=1.0.0",
 ]
