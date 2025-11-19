@@ -1,0 +1,72 @@
+# Ruff configuration for MCPS project
+
+# Extend Python version compatibility
+target-version = "py312"
+
+# Line length
+line-length = 100
+
+[lint]
+# Enable rule categories
+select = [
+    "E",     # pycodestyle errors
+    "F",     # Pyflakes
+    "I",     # isort (import sorting)
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "ARG",   # flake8-unused-arguments
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "PTH",   # flake8-use-pathlib
+    "RUF",   # Ruff-specific rules
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",    # Line too long (handled by formatter)
+    "B008",    # Do not perform function calls in argument defaults (common in FastAPI)
+    "UP007",   # Use X | Y for type annotations (prefer Optional for readability)
+]
+
+# Exclude directories
+exclude = [
+    ".venv",
+    "venv",
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".eggs",
+    "alembic/versions",  # Don't lint auto-generated migrations
+    ".next",
+    "node_modules",
+]
+
+[lint.per-file-ignores]
+# Allow unused imports in __init__.py files
+"__init__.py" = ["F401"]
+# Allow print statements in CLI scripts
+"**/cli.py" = ["T201"]
+
+[lint.isort]
+# Import sorting configuration
+known-first-party = ["mcps"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with 4 spaces
+indent-style = "space"
+
+# Respect magic trailing commas
+skip-magic-trailing-comma = false
+
+# Automatically detect line ending
+line-ending = "auto"

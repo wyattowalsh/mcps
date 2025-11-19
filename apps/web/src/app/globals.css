@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary: #6a9fb5;
+    --primary-rgb: 106, 159, 181;
+
+    --background: #ffffff;
+    --background-rgb: 255, 255, 255;
+
+    --foreground: #000000;
+    --foreground-rgb: 0, 0, 0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0a0a0a;
+      --background-rgb: 10, 10, 10;
+
+      --foreground: #f5f5f5;
+      --foreground-rgb: 245, 245, 245;
+    }
+  }
+
+  body {
+    background: rgb(var(--background-rgb));
+    color: rgb(var(--foreground-rgb));
+    transition: background-color 0.3s, color 0.3s;
+  }
+
+  a {
+    @apply text-[var(--primary)] hover:opacity-80 transition-opacity;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:opacity-90 transition-opacity;
+  }
+}

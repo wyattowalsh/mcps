@@ -9,7 +9,7 @@ from alembic import context
 from sqlmodel import SQLModel
 
 # Import settings and models
-from mcps.settings import settings
+from packages.harvester.settings import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -27,7 +27,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 # Import all models here to ensure they're registered
-from mcps.models import *  # noqa: F401, F403
+from packages.harvester.models import *  # noqa: F401, F403
 
 target_metadata = SQLModel.metadata
 

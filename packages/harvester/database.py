@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
-from mcps.settings import settings
+from .settings import settings
 
 # Create async engine
 engine = create_async_engine(
