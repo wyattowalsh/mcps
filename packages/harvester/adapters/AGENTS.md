@@ -4,11 +4,13 @@
 
 The `packages/harvester/adapters/` directory contains source-specific harvester implementations. Each adapter inherits from `BaseHarvester` and implements the polymorphic strategy pattern described in PRD.md Section 4.1.
 
-**Purpose:** Enable data ingestion from heterogeneous sources (GitHub, NPM, PyPI, Docker Hub, HTTP endpoints) using a unified interface.
+**Purpose:** Enable data ingestion from heterogeneous sources including code repositories (GitHub, NPM, PyPI, Docker, HTTP) and social media platforms (Reddit, Twitter, YouTube).
 
 **Architecture:** Each adapter implements fetch -> parse -> store lifecycle with automatic retry, checkpointing, and error handling.
 
 ## Key Files
+
+### Code Repository Adapters
 
 | File | Strategy | Fidelity | Primary Use Case |
 |------|----------|----------|------------------|
@@ -17,6 +19,14 @@ The `packages/harvester/adapters/` directory contains source-specific harvester 
 | `pypi.py` | PyPI JSON API | Medium | Python package servers |
 | `docker.py` | Docker Registry v2 | Medium | Containerized servers |
 | `http.py` | Generic HTTP/SSE | Low | Direct endpoint servers |
+
+### Social Media Adapters (NEW in Phase 11)
+
+| File | Platform | API | Primary Use Case |
+|------|----------|-----|------------------|
+| `reddit.py` | Reddit | PRAW (Reddit API) | Community discussions, questions, announcements |
+| `twitter.py` | Twitter/X | Tweepy (Twitter API v2) | Real-time mentions, hashtags, threads |
+| `youtube.py` | YouTube | Google API Client (YouTube Data API v3) | Tutorials, demos, educational content |
 
 ## Patterns
 
@@ -466,11 +476,304 @@ def _parse_github_url(self, url: str) -> tuple[str, str]:
     return path_parts[0], path_parts[1]
 ```
 
+## Social Media Adapters (Phase 11 Implementation)
+
+Social media adapters differ from code repository adapters in that they:
+1. Return **lists** of social content (posts, videos) rather than single Server objects
+2. Use **sentiment analysis** and **quality scoring** algorithms
+3. **Link content to servers** by extracting and matching URLs
+4. Work with **synchronous APIs** that must be wrapped in asyncio.to_thread()
+
+### Reddit Adapter (`reddit.py`)
+
+**Purpose:** Track MCP discussions across programming subreddits
+
+**Key Methods:**
+```python
+async def fetch(self, url: str) -> dict[str, Any]:
+    """Fetch posts from a subreddit.
+
+    Args:
+        url: Subreddit name (e.g., "r/LocalLLaMA" or "LocalLLaMA")
+
+    Returns:
+        {"subreddit": str, "posts": list[dict]}
+    """
+    # Uses PRAW (synchronous) wrapped in asyncio.to_thread()
+    # Filters posts using MCP keyword regex patterns
+    # Extracts post metadata, scores, comments
+
+async def parse(self, data: dict[str, Any]) -> list[SocialPost]:
+    """Parse Reddit data into SocialPost models.
+
+    Returns:
+        List of SocialPost objects with:
+        - Sentiment analysis (VADER)
+        - Category classification (tutorial, question, etc.)
+        - Quality scoring (0-100 based on engagement)
+        - Relevance scoring (0.0-1.0)
+    """
+
+async def harvest(self, session: AsyncSession) -> dict[str, Any]:
+    """Harvest from all configured subreddits.
+
+    Iterates through config.subreddits list and processes each.
+    """
+```
+
+**Configuration:**
+- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` - API credentials
+- `REDDIT_SUBREDDITS` - Comma-separated subreddit list
+- `REDDIT_KEYWORDS` - Comma-separated keyword list
+- `REDDIT_MIN_SCORE_THRESHOLD` - Minimum upvotes to store
+
+**Sentiment Analysis:**
+Uses VADER (Valence Aware Dictionary and sEntiment Reasoner):
+```python
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+analyzer = SentimentIntensityAnalyzer()
+scores = analyzer.polarity_scores(text)
+compound = scores["compound"]  # -1.0 to 1.0
+```
+
+**URL Extraction & Server Linking:**
+```python
+# Extract GitHub/NPM/PyPI URLs from post text
+mentioned_urls = self._extract_urls(text)
+
+# Find matching servers in database
+for url in mentioned_urls:
+    result = await session.execute(
+        select(Server).where(Server.primary_url.contains(url))
+    )
+    server = result.scalar_one_or_none()
+    if server:
+        mentioned_server_ids.append(server.id)
+```
+
+### Twitter Adapter (`twitter.py`)
+
+**Purpose:** Track real-time MCP mentions and hashtags
+
+**Key Methods:**
+```python
+async def fetch(self, url: str) -> dict[str, Any]:
+    """Search Twitter for MCP-related tweets.
+
+    Args:
+        url: Search query (e.g., "Model Context Protocol")
+
+    Returns:
+        {"query": str, "tweets": list[dict]}
+    """
+    # Uses Tweepy Client (synchronous) wrapped in asyncio.to_thread()
+    # Twitter API v2 recent search endpoint
+    # Extracts tweet text, author, engagement metrics
+    # Parses hashtags, mentions, URLs from entities
+```
+
+**Configuration:**
+- `TWITTER_BEARER_TOKEN` - Twitter API v2 bearer token (required)
+- `TWITTER_API_KEY` / `TWITTER_API_SECRET` - Optional for OAuth
+- `TWITTER_SEARCH_QUERIES` - Comma-separated query list
+- `TWITTER_MAX_RESULTS_PER_QUERY` - 10-100 tweets per query
+- `TWITTER_MIN_LIKES_THRESHOLD` - Minimum likes to store
+
+**Engagement Metrics:**
+Twitter provides rich engagement data:
+- `like_count` - Number of likes
+- `retweet_count` - Number of retweets
+- `reply_count` - Number of replies
+- `quote_count` - Number of quote tweets
+- `impression_count` - Total views (if available)
+
+**Category Classification:**
+```python
+def _categorize_tweet(self, tweet_data: dict) -> ContentCategory:
+    text = tweet_data["text"].lower()
+
+    if "tutorial" in text or "how to" in text:
+        return ContentCategory.TUTORIAL
+    elif "announcing" in text or "released" in text:
+        return ContentCategory.ANNOUNCEMENT
+    elif "?" in text:
+        return ContentCategory.QUESTION
+    # ... more classification logic
+```
+
+### YouTube Adapter (`youtube.py`)
+
+**Purpose:** Discover MCP tutorials and demonstration videos
+
+**Key Methods:**
+```python
+async def fetch(self, url: str) -> dict[str, Any]:
+    """Search YouTube for MCP-related videos.
+
+    Args:
+        url: Search query (e.g., "MCP tutorial")
+
+    Returns:
+        {"query": str, "videos": list[dict]}
+    """
+    # Uses Google API Client (synchronous) wrapped in asyncio.to_thread()
+    # YouTube Data API v3 search.list endpoint
+    # Fetches detailed statistics via videos.list endpoint
+    # Parses ISO 8601 duration format
+```
+
+**Configuration:**
+- `YOUTUBE_API_KEY` - YouTube Data API v3 key
+- `YOUTUBE_SEARCH_QUERIES` - Comma-separated query list
+- `YOUTUBE_MAX_RESULTS_PER_QUERY` - Max videos per query
+- `YOUTUBE_MIN_VIEW_COUNT` - Minimum views to store
+- `YOUTUBE_ORDER_BY` - relevance, date, viewCount, or rating
+
+**Educational Value Scoring:**
+```python
+def _calculate_educational_value(self, video_data: dict) -> int:
+    """Calculate educational value (0-100)."""
+    score = 0
+
+    # Tutorial indicators in title
+    if "tutorial" in title or "guide" in title:
+        score += 30
+
+    # Has captions (accessibility)
+    if video_data["caption"] == "true":
+        score += 20
+
+    # Ideal length (10-30 minutes)
+    if 600 <= duration <= 1800:
+        score += 20
+
+    # Contains resource links
+    if has_urls_in_description:
+        score += 15
+
+    # Educational tags
+    if has_educational_tags:
+        score += 15
+
+    return min(100, score)
+```
+
+**Duration Parsing:**
+YouTube returns ISO 8601 durations (e.g., "PT15M30S"):
+```python
+def _parse_duration(self, duration_str: str) -> int:
+    """Parse ISO 8601 duration to seconds."""
+    # PT1H30M15S -> 1 hour, 30 minutes, 15 seconds
+    pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+    match = pattern.match(duration_str)
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    return hours * 3600 + minutes * 60 + seconds
+```
+
+### Common Patterns for Social Media Adapters
+
+#### 1. Wrapping Synchronous APIs
+Social media libraries are synchronous, so wrap them:
+```python
+async def fetch(self, url: str) -> dict:
+    if not self.client:
+        self.client = await asyncio.to_thread(self._init_client)
+
+    def _fetch_data():
+        # Synchronous API calls here
+        return data
+
+    return await asyncio.to_thread(_fetch_data)
+```
+
+#### 2. Quality Scoring Algorithm
+```python
+def _calculate_quality(self, data: dict) -> int:
+    """Score 0-100 based on engagement."""
+    score = 0
+
+    # Primary engagement (40 points)
+    if data["primary_metric"] > threshold_high:
+        score += 40
+    elif data["primary_metric"] > threshold_medium:
+        score += 30
+    # ... more tiers
+
+    # Secondary engagement (30 points)
+    # Engagement ratio (30 points)
+
+    return min(100, score)
+```
+
+#### 3. Relevance Scoring
+```python
+def _calculate_relevance(self, data: dict) -> float:
+    """Score 0.0-1.0 for MCP relevance."""
+    score = 0.0
+
+    # Direct mentions (0.6 max)
+    if "model context protocol" in text.lower():
+        score += 0.6
+    elif "mcp" in text.lower():
+        score += 0.3
+
+    # Contains relevant links (0.2 max)
+    if has_github_npm_pypi_urls:
+        score += 0.2
+
+    # High engagement = likely relevant (0.2 max)
+    if engagement > threshold:
+        score += 0.2
+
+    return min(1.0, score)
+```
+
+### Testing Social Media Adapters
+
+**Mock API Responses:**
+```python
+@pytest.mark.asyncio
+async def test_reddit_parse():
+    """Test Reddit post parsing."""
+    harvester = RedditHarvester()
+
+    mock_data = {
+        "subreddit": "LocalLLaMA",
+        "posts": [{
+            "id": "abc123",
+            "title": "New MCP server for...",
+            "selftext": "Check out my new...",
+            "score": 150,
+            "num_comments": 20,
+            # ... more fields
+        }]
+    }
+
+    posts = await harvester.parse(mock_data)
+
+    assert len(posts) == 1
+    assert posts[0].platform == SocialPlatform.REDDIT
+    assert posts[0].quality_score > 0
+```
+
+**Integration Testing:**
+Use real APIs with test queries to validate:
+```bash
+# Test Reddit adapter
+uv run python -m packages.harvester.cli harvest-social --platform reddit
+
+# Check database for stored posts
+sqlite3 data/mcps.db "SELECT count(*) FROM social_posts WHERE platform='reddit';"
+```
+
 ## Related Areas
 
 - **Base Harvester:** See `packages/harvester/core/AGENTS.md` for BaseHarvester details
 - **Analysis:** See `packages/harvester/analysis/AGENTS.md` for security analysis integration
 - **Models:** See `packages/harvester/models/models.py` for Server entity structure
+- **Social Models:** See `packages/harvester/models/social.py` for SocialPost, Video, Article entities
 - **Parent Guide:** See `packages/harvester/AGENTS.md` for harvester system overview
 
 ## Performance Tips

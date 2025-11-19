@@ -2,35 +2,49 @@
 
 ## Overview
 
-MCPS (Model Context Protocol System) is the definitive intelligence hub for the MCP ecosystem. It aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from multiple sources (GitHub, NPM, PyPI, Docker, HTTP endpoints).
+MCPS (Model Context Protocol System) is the definitive intelligence hub for the MCP ecosystem. It aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from multiple sources including code repositories (GitHub, NPM, PyPI, Docker, HTTP endpoints) and social media platforms (Reddit, Twitter, YouTube).
 
-**Version:** 2.5.0
+**Version:** 3.1.0 (Phase 11: Social Media Integration)
 **Stack:** Python 3.12+ (Backend), Next.js 15 (Frontend), SQLite with WAL mode
 **Architecture:** Monorepo with clear separation between harvesting logic and presentation
+**Scope:** Comprehensive MCP ecosystem database covering code, community discussions, tutorials, and social engagement
 
 ## High-Level Context
 
 MCPS is designed as a "Universal Ingestion" system that:
 - Harvests MCP servers from heterogeneous sources using polymorphic strategy patterns
+- **NEW:** Tracks social media discussions (Reddit posts, Twitter/X threads, YouTube tutorials)
+- **NEW:** Analyzes sentiment and community engagement around MCP ecosystem
 - Performs deep static analysis (AST-based security scanning)
 - Calculates health scores and risk levels algorithmically
 - Provides semantic search via vector embeddings (sqlite-vec)
 - Exports data in multiple formats (Parquet, JSONL, CSV) for data science workflows
 - Offers both a RESTful API (FastAPI) and web dashboard (Next.js 15)
+- Links social media mentions to specific servers for comprehensive ecosystem intelligence
 
 ## Project Structure
 
 ```
 mcps/
 ├── packages/harvester/          # Core Python ETL engine (SQLModel + async)
-│   ├── adapters/               # Source-specific harvesters (GitHub, NPM, PyPI, Docker, HTTP)
+│   ├── adapters/               # Source-specific harvesters
+│   │   ├── github.py           # GitHub GraphQL harvester
+│   │   ├── npm.py              # NPM registry + tarball inspection
+│   │   ├── pypi.py             # PyPI metadata + wheel/sdist inspection
+│   │   ├── docker.py           # Docker registry API v2
+│   │   ├── http.py             # HTTP/SSE MCP introspection
+│   │   ├── reddit.py           # NEW: Reddit post & comment harvester (PRAW)
+│   │   ├── twitter.py          # NEW: Twitter/X API v2 harvester (Tweepy)
+│   │   └── youtube.py          # NEW: YouTube Data API v3 harvester
 │   ├── analysis/               # AST scanning, embeddings, bus factor calculation
 │   ├── core/                   # Base classes, abstractions, updater logic
-│   ├── models/                 # SQLModel entities (Server, Tool, Dependency, etc.)
+│   ├── models/                 # SQLModel entities
+│   │   ├── models.py           # Core: Server, Tool, Dependency, etc.
+│   │   └── social.py           # NEW: SocialPost, Video, Article, Discussion, Event, Company
 │   ├── exporters/              # Data export formats (Parquet, JSONL, CSV)
 │   ├── tasks/                  # Background scheduler tasks (APScheduler)
 │   ├── utils/                  # HTTP client, checkpointing, validation
-│   ├── cli.py                  # CLI interface (Typer)
+│   ├── cli.py                  # CLI interface (Typer) - includes harvest-social command
 │   └── database.py             # Async session management
 │
 ├── apps/
@@ -224,6 +238,12 @@ Required environment variables (see `.env.example`):
 # GitHub API access (for GraphQL queries)
 GITHUB_TOKEN=ghp_...
 
+# Social Media APIs (NEW in Phase 11)
+REDDIT_CLIENT_ID=...           # Reddit API credentials
+REDDIT_CLIENT_SECRET=...
+TWITTER_BEARER_TOKEN=...       # Twitter/X API v2 credentials
+YOUTUBE_API_KEY=...            # YouTube Data API v3 key
+
 # Optional: Database path override
 DATABASE_URL=sqlite:///data/mcps.db
 
@@ -233,6 +253,80 @@ OPENAI_API_KEY=sk-...
 # Optional: Log level
 LOG_LEVEL=INFO
 ```
+
+**Note:** Social media credentials are optional but required for `harvest-social` CLI command. See `.env.example` for all configuration options including subreddit lists, search queries, and quality thresholds.
+
+## Social Media Integration (Phase 11)
+
+MCPS now tracks MCP ecosystem discussions across social media platforms, transforming it from a code-only database into a comprehensive intelligence hub.
+
+### Supported Platforms
+
+1. **Reddit** (`packages/harvester/adapters/reddit.py`)
+   - Tracks 10+ programming subreddits (r/LocalLLaMA, r/ChatGPT, r/programming, etc.)
+   - Keyword-based post filtering with MCP-specific regex patterns
+   - VADER sentiment analysis on post content
+   - Extracts GitHub/NPM/PyPI URLs and links to servers
+   - Quality scoring based on upvotes, comments, and upvote ratio
+
+2. **Twitter/X** (`packages/harvester/adapters/twitter.py`)
+   - Uses Twitter API v2 recent search
+   - Tracks hashtags (#MCP), mentions (@modelcontextprotocol), and keywords
+   - Engagement metrics: likes, retweets, replies, views
+   - Hashtag and mention extraction
+   - Sentiment analysis and relevance scoring
+
+3. **YouTube** (`packages/harvester/adapters/youtube.py`)
+   - YouTube Data API v3 for video search
+   - Discovers tutorials, demos, and educational content
+   - Extracts view counts, likes, comments, duration
+   - Calculates educational value scores
+   - Caption/transcript availability detection
+
+### Data Models
+
+- **SocialPost** - Reddit/Twitter/Discord posts with engagement metrics, sentiment, category
+- **Video** - YouTube/Vimeo videos with educational value scores, transcripts
+- **Article** - Blog posts from Medium, Dev.to (future)
+- **Discussion** - Hacker News, Stack Overflow threads (future)
+- **Event** - Meetups, conferences, webinars (future)
+- **Company** - Organizations using/building MCP (future)
+
+### CLI Usage
+
+```bash
+# Harvest from all platforms
+uv run python -m packages.harvester.cli harvest-social --platform all
+
+# Harvest specific platform
+uv run python -m packages.harvester.cli harvest-social --platform reddit
+uv run python -m packages.harvester.cli harvest-social --platform twitter
+uv run python -m packages.harvester.cli harvest-social --platform youtube
+```
+
+### Key Features
+
+- **Automatic Server Linking:** URLs mentioned in social posts are automatically linked to Server records
+- **Sentiment Analysis:** VADER sentiment classifier (very_positive → very_negative)
+- **Quality Scoring:** Algorithmic quality scores (0-100) based on engagement
+- **Relevance Scoring:** How relevant content is to MCP (0.0-1.0)
+- **Category Classification:** Tutorial, announcement, question, showcase, etc.
+- **Configurable Filters:** Minimum score thresholds, search queries, subreddit lists
+
+### Implementation Notes
+
+- Social media APIs are **synchronous** (PRAW, Tweepy, Google API Client)
+- Use `asyncio.to_thread()` to wrap sync calls in async harvesters
+- All adapters extend `BaseHarvester` for consistency
+- Rate limiting handled via API client configuration
+- Retry logic with exponential backoff via tenacity decorators
+
+### Future Enhancements (Phases 12-15)
+
+- **Phase 12:** Blog/CMS for curated content and ecosystem updates
+- **Phase 13:** Advanced explorers (trend analysis, network graphs, sentiment dashboards)
+- **Phase 14:** Community features (user reviews, bookmarks, recommendations)
+- **Phase 15:** Predictive analytics (trending detection, quality prediction, ML models)
 
 ## Testing Strategy
 
