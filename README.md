@@ -9,17 +9,26 @@
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/mcps/actions)
 [![Coverage](https://img.shields.io/badge/coverage-85%25-green.svg)](https://github.com/your-org/mcps)
 
-**Version:** 3.0.0 | **Status:** Active Development | **Last Updated:** 2025-01-15
+**Version:** 3.1.0 | **Status:** Active Development | **Last Updated:** 2025-11-19
 
 ## Overview
 
-MCPS aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from any source:
+MCPS aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from **code repositories AND social media**:
 
+### Code Repositories
 - ✅ GitHub repositories (GraphQL API)
 - ✅ NPM packages (registry + tarball inspection)
 - ✅ PyPI packages (JSON API + wheel analysis)
-- 🚧 Docker containers (registry v2)
-- 🚧 HTTP/SSE endpoints (MCP introspection)
+- ✅ Docker containers (registry v2)
+- ✅ HTTP/SSE endpoints (MCP introspection)
+
+### Social Media & Community (Phase 11 - NEW! 🎉)
+- ✅ **Reddit** posts and discussions (PRAW API)
+- ✅ **Twitter/X** mentions and threads (Tweepy v2)
+- ✅ **YouTube** tutorials and demos (YouTube Data API v3)
+- 📊 Sentiment analysis (VADER)
+- 🎯 Quality and relevance scoring
+- 🔗 Automatic server linking via URL extraction
 
 ## Quick Start
 
@@ -72,6 +81,7 @@ docker-compose up
 
 ## Features
 
+### Core Capabilities
 - 🔍 **Deep Metadata Extraction** - Parses mcp.json, package.json, pyproject.toml
 - 🛡️ **Security Analysis** - AST-based scanning for dangerous patterns
 - 📊 **Health Scoring** - Algorithmic quality assessment
@@ -79,6 +89,16 @@ docker-compose up
 - 📈 **Dependency Graphs** - Full dependency tree extraction
 - 💾 **SQLite-First** - Zero-latency local analytics
 - 📦 **Data Exports** - Parquet, JSONL, and binary vector formats
+
+### Social Media Intelligence (Phase 11)
+- 📱 **Multi-Platform Harvesting** - Reddit, Twitter/X, YouTube
+- 😊 **Sentiment Analysis** - VADER-based emotion classification
+- 🎯 **Content Categorization** - Tutorial, news, discussion, showcase, etc.
+- 🏆 **Quality Scoring** - Engagement-based quality metrics (0-100)
+- 🔗 **Automatic Linking** - Links social mentions to code repositories
+- 📊 **Trending Detection** - Identifies popular content over time
+- 🎓 **Educational Value** - Scores video content for learning value
+- 🌐 **Web Dashboard** - Interactive social media explorer at `/social`
 
 ## Documentation
 
@@ -140,6 +160,27 @@ cd apps/web && npm run dev                      # Next.js on :3000
 # Build documentation
 cd docs && make html
 open _build/html/index.html
+```
+
+### CLI Commands
+
+```bash
+# Code repository harvesting
+uv run python -m packages.harvester.cli ingest --strategy github --target https://github.com/owner/repo
+uv run python -m packages.harvester.cli export --format parquet --destination ./exports
+
+# Social media harvesting (NEW!)
+uv run python -m packages.harvester.cli harvest-social --platform all       # All platforms
+uv run python -m packages.harvester.cli harvest-social --platform reddit    # Reddit only
+uv run python -m packages.harvester.cli harvest-social --platform twitter   # Twitter/X only
+uv run python -m packages.harvester.cli harvest-social --platform youtube   # YouTube only
+
+# Server operations
+uv run python -m packages.harvester.cli refresh --url https://github.com/owner/repo
+uv run python -m packages.harvester.cli update-health    # Recalculate health scores
+uv run python -m packages.harvester.cli update-risk      # Recalculate risk levels
+uv run python -m packages.harvester.cli prune --days 180 # Remove stale servers
+uv run python -m packages.harvester.cli stats            # Show database statistics
 ```
 
 ## Contributing
