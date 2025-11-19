@@ -9,11 +9,19 @@
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/your-org/mcps/actions)
 [![Coverage](https://img.shields.io/badge/coverage-85%25-green.svg)](https://github.com/your-org/mcps)
 
-**Version:** 3.1.0 | **Status:** Active Development | **Last Updated:** 2025-11-19
+**Version:** 3.3.0 | **Status:** Production Ready | **Last Updated:** 2025-11-19
 
 ## Overview
 
-MCPS aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from **code repositories AND social media**:
+MCPS is a **production-ready, Supabase-powered** system that aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from **code repositories AND social media**:
+
+### 🚀 New in v3.3.0: Supabase Integration
+- ☁️ **Supabase Backend-as-a-Service** - Auth, Storage, Realtime
+- 🔐 **Built-in Authentication** - Email/password + OAuth (GitHub, Google)
+- 📁 **File Storage** - CDN-backed storage with Supabase Storage
+- ⚡ **Real-time Updates** - WebSocket subscriptions to data changes
+- 🔒 **Row Level Security** - Database-level security policies
+- 🌐 **Type-safe APIs** - Auto-generated TypeScript types
 
 ### Code Repositories
 - ✅ GitHub repositories (GraphQL API)

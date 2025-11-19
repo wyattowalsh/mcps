@@ -856,6 +856,160 @@ async def _check_health(component: str) -> None:
         await close_db()
 
 
+@app.command()
+def supabase_status(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Check Supabase configuration and connection status.
+
+    Examples:
+        python -m packages.harvester.cli supabase-status
+    """
+    configure_logging(log_level)
+    logger.info("Checking Supabase configuration...")
+
+    try:
+        asyncio.run(_check_supabase_status())
+    except Exception as e:
+        logger.error(f"Supabase status check failed: {e}")
+        sys.exit(1)
+
+
+async def _check_supabase_status() -> None:
+    """Check Supabase configuration and connection."""
+    from packages.harvester.settings import settings
+
+    typer.echo("\n=== Supabase Configuration Status ===\n")
+
+    # Check if Supabase is configured
+    if not settings.supabase_url:
+        typer.echo("Status: NOT CONFIGURED")
+        typer.echo("\nSupabase is not configured. To use Supabase:")
+        typer.echo("1. Create a Supabase project at https://app.supabase.com")
+        typer.echo("2. Get your credentials from Project Settings > API")
+        typer.echo("3. Update your .env file with Supabase credentials")
+        typer.echo("4. Set USE_SUPABASE=true in .env")
+        return
+
+    # Display configuration
+    typer.echo(f"Supabase URL: {settings.supabase_url}")
+    typer.echo(f"Use Supabase: {settings.use_supabase}")
+    typer.echo(f"Storage Bucket: {settings.supabase_storage_bucket}")
+    typer.echo(f"Anon Key Configured: {'Yes' if settings.supabase_anon_key else 'No'}")
+    typer.echo(
+        f"Service Role Key Configured: {'Yes' if settings.supabase_service_role_key else 'No'}"
+    )
+    typer.echo(f"DB Host Configured: {'Yes' if settings.supabase_db_host else 'No'}")
+
+    # Try to connect
+    try:
+        from packages.harvester.supabase import is_supabase_configured
+
+        if is_supabase_configured():
+            typer.echo("\nConnection: CHECKING...")
+
+            # Try to get client
+            from packages.harvester.supabase import supabase
+
+            client = supabase()
+            typer.echo("Connection: SUCCESS ✓")
+            logger.success("Supabase client initialized successfully")
+        else:
+            typer.echo("\nConnection: NOT CONFIGURED")
+            typer.echo("Missing required Supabase credentials")
+
+    except ImportError:
+        typer.echo("\nConnection: FAILED")
+        typer.echo("Supabase package not installed. Install with: pip install supabase")
+    except Exception as e:
+        typer.echo("\nConnection: FAILED")
+        typer.echo(f"Error: {e}")
+
+    typer.echo()
+
+
+@app.command()
+def supabase_test_storage(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Test Supabase Storage by uploading/downloading/deleting a test file.
+
+    Examples:
+        python -m packages.harvester.cli supabase-test-storage
+    """
+    configure_logging(log_level)
+    logger.info("Testing Supabase Storage...")
+
+    try:
+        asyncio.run(_test_supabase_storage())
+    except Exception as e:
+        logger.error(f"Supabase Storage test failed: {e}")
+        sys.exit(1)
+
+
+async def _test_supabase_storage() -> None:
+    """Test Supabase Storage operations."""
+    import io
+
+    from packages.harvester.storage import SupabaseStorage
+
+    typer.echo("\n=== Testing Supabase Storage ===\n")
+
+    try:
+        # Create storage client
+        storage = SupabaseStorage(use_admin=True)
+        typer.echo("✓ Storage client initialized")
+
+        # Create test file
+        test_content = b"This is a test file from MCPS CLI"
+        test_file = io.BytesIO(test_content)
+        test_path = "test/cli-test.txt"
+
+        # Upload
+        typer.echo(f"\nUploading test file to: {test_path}")
+        public_url = await storage.upload_file(test_path, test_file, "text/plain")
+        typer.echo(f"✓ Upload successful")
+        typer.echo(f"Public URL: {public_url}")
+
+        # Download
+        typer.echo(f"\nDownloading test file from: {test_path}")
+        downloaded = await storage.download_file(test_path)
+        typer.echo(f"✓ Download successful")
+        typer.echo(f"Content matches: {downloaded == test_content}")
+
+        # List
+        typer.echo(f"\nListing files in test/ directory")
+        files = await storage.list_files("test/")
+        typer.echo(f"✓ Found {len(files)} file(s)")
+
+        # Delete
+        typer.echo(f"\nDeleting test file: {test_path}")
+        await storage.delete_file(test_path)
+        typer.echo(f"✓ Delete successful")
+
+        typer.echo("\n=== All tests passed! ===\n")
+        logger.success("Supabase Storage is working correctly")
+
+    except ValueError as e:
+        typer.echo(f"\n✗ Test failed: {e}")
+        typer.echo("\nMake sure Supabase is configured in your .env file")
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"\n✗ Test failed: {e}")
+        logger.error(f"Storage test error: {e}")
+        sys.exit(1)
+
+
 @app.command(name="cache-clear")
 def cache_clear(
     pattern: str = typer.Option(

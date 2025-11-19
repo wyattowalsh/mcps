@@ -73,6 +73,13 @@ dependencies = [
 
     # Task Scheduling
     "apscheduler>=3.10.0",  # Background task scheduling
+
+    # Supabase Integration
+    "supabase>=2.9.0",  # Official Supabase Python client
+    "gotrue>=2.8.0",  # Supabase Auth
+    "postgrest-py>=0.16.0",  # Supabase PostgREST client
+    "storage3>=0.8.0",  # Supabase Storage
+    "realtime>=2.0.0",  # Supabase Realtime
 ]
 
 [dependency-groups]

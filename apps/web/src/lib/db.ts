@@ -1,276 +1,79 @@
-import { Pool, PoolClient, QueryResult } from 'pg';
+import { createClient } from '@/lib/supabase/client'
+import type { Database } from '@/types/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
-// Types based on PRD schema
-export type HostType = 'github' | 'gitlab' | 'npm' | 'pypi' | 'docker' | 'http';
-export type RiskLevel = 'safe' | 'moderate' | 'high' | 'critical' | 'unknown';
-export type DependencyType = 'runtime' | 'dev' | 'peer';
+// Re-export types from supabase types
+export type HostType = Database['public']['Enums']['host_type']
+export type RiskLevel = Database['public']['Enums']['risk_level']
+export type DependencyType = Database['public']['Enums']['dependency_type']
+export type SocialPlatform = Database['public']['Enums']['social_platform']
+export type VideoPlatform = Database['public']['Enums']['video_platform']
+export type ArticlePlatform = Database['public']['Enums']['article_platform']
+export type ContentCategory = Database['public']['Enums']['content_category']
+export type SentimentScore = Database['public']['Enums']['sentiment_score']
 
-export interface Server {
-  id: number;
-  uuid: string;
-  name: string;
-  primary_url: string;
-  host_type: HostType;
-  description: string | null;
-  author_name: string | null;
-  homepage: string | null;
-  license: string | null;
-  readme_content: string | null;
-  keywords: string; // JSON string
-  categories: string; // JSON string
-  stars: number;
-  downloads: number;
-  forks: number;
-  open_issues: number;
-  risk_level: RiskLevel;
-  verified_source: boolean;
-  health_score: number;
-  last_indexed_at: string;
-  created_at: string;
-  updated_at: string;
-}
+// Re-export table row types
+export type Server = Database['public']['Tables']['server']['Row']
+export type Tool = Database['public']['Tables']['tool']['Row']
+export type ResourceTemplate = Database['public']['Tables']['resourcetemplate']['Row']
+export type Prompt = Database['public']['Tables']['prompt']['Row']
+export type Dependency = Database['public']['Tables']['dependency']['Row']
+export type Contributor = Database['public']['Tables']['contributor']['Row']
+export type Release = Database['public']['Tables']['release']['Row']
+export type SocialPost = Database['public']['Tables']['social_posts']['Row']
+export type Video = Database['public']['Tables']['videos']['Row']
+export type Article = Database['public']['Tables']['articles']['Row']
 
-export interface Tool {
-  id: number;
-  server_id: number;
-  name: string;
-  description: string | null;
-  input_schema: string; // JSON string
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ResourceTemplate {
-  id: number;
-  server_id: number;
-  uri_template: string;
-  name: string | null;
-  mime_type: string | null;
-  description: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Prompt {
-  id: number;
-  server_id: number;
-  name: string;
-  description: string | null;
-  arguments: string; // JSON string
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Dependency {
-  id: number;
-  server_id: number;
-  library_name: string;
-  version_constraint: string | null;
-  ecosystem: string;
-  type: DependencyType;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Contributor {
-  id: number;
-  server_id: number;
-  username: string;
-  platform: string;
-  commits: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Release {
-  id: number;
-  server_id: number;
-  version: string;
-  changelog: string | null;
-  published_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
+// Additional types for queries
 export interface DashboardStats {
-  total_servers: number;
-  total_tools: number;
-  average_health_score: number;
-  total_stars: number;
-  servers_by_host_type: Record<HostType, number>;
-  servers_by_risk_level: Record<RiskLevel, number>;
+  total_servers: number
+  total_tools: number
+  average_health_score: number
+  total_stars: number
+  servers_by_host_type: Record<HostType, number>
+  servers_by_risk_level: Record<RiskLevel, number>
 }
 
 export interface DependencyGraphNode {
-  id: number;
-  name: string;
-  host_type: HostType;
-  stars: number;
-  risk_level: RiskLevel;
+  id: number
+  name: string
+  host_type: HostType
+  stars: number
+  risk_level: RiskLevel
 }
 
 export interface DependencyGraphEdge {
-  source: number;
-  target: number;
-  shared_dependencies: string[];
-}
-
-// Social Media Types
-export type SocialPlatform = 'reddit' | 'twitter' | 'discord' | 'slack' | 'hacker_news' | 'stack_overflow';
-export type VideoPlatform = 'youtube' | 'vimeo' | 'twitch';
-export type ArticlePlatform = 'medium' | 'dev_to' | 'hashnode' | 'personal_blog' | 'substack';
-export type ContentCategory = 'tutorial' | 'news' | 'discussion' | 'announcement' | 'question' | 'showcase' | 'best_practices' | 'case_study' | 'review' | 'other';
-export type SentimentScore = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
-
-export interface SocialPost {
-  id: number;
-  uuid: string;
-  platform: SocialPlatform;
-  post_id: string;
-  url: string;
-  title: string | null;
-  content: string;
-  author: string;
-  author_url: string | null;
-  score: number;
-  comment_count: number;
-  share_count: number;
-  view_count: number | null;
-  category: ContentCategory | null;
-  sentiment: SentimentScore | null;
-  language: string;
-  mentioned_servers: string; // JSON string
-  mentioned_urls: string; // JSON string
-  platform_created_at: string;
-  subreddit: string | null;
-  reddit_flair: string | null;
-  twitter_hashtags: string; // JSON string
-  twitter_mentions: string; // JSON string
-  relevance_score: number | null;
-  quality_score: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Video {
-  id: number;
-  uuid: string;
-  platform: VideoPlatform;
-  video_id: string;
-  url: string;
-  title: string;
-  description: string;
-  channel: string;
-  channel_url: string;
-  thumbnail_url: string | null;
-  duration_seconds: number | null;
-  language: string;
-  view_count: number;
-  like_count: number;
-  comment_count: number;
-  category: ContentCategory | null;
-  tags: string; // JSON string
-  mentioned_servers: string; // JSON string
-  mentioned_urls: string; // JSON string
-  has_captions: boolean;
-  published_at: string;
-  relevance_score: number | null;
-  quality_score: number | null;
-  educational_value: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Article {
-  id: number;
-  uuid: string;
-  platform: ArticlePlatform;
-  article_id: string | null;
-  url: string;
-  title: string;
-  subtitle: string | null;
-  excerpt: string | null;
-  author: string;
-  author_url: string | null;
-  featured_image: string | null;
-  category: ContentCategory | null;
-  tags: string; // JSON string
-  language: string;
-  view_count: number | null;
-  like_count: number;
-  comment_count: number;
-  reading_time_minutes: number | null;
-  mentioned_servers: string; // JSON string
-  mentioned_urls: string; // JSON string
-  published_at: string;
-  relevance_score: number | null;
-  quality_score: number | null;
-  technical_depth: number | null;
-  created_at: string;
-}
-
-// PostgreSQL connection pool with configuration
-let pool: Pool | null = null;
-
-function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'mcps',
-      user: process.env.POSTGRES_USER || 'mcps',
-      password: process.env.POSTGRES_PASSWORD || 'mcps_password',
-      max: 20, // Maximum pool size
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-
-    // Handle pool errors
-    pool.on('error', (err) => {
-      console.error('Unexpected error on idle PostgreSQL client', err);
-    });
-  }
-  return pool;
+  source: number
+  target: number
+  shared_dependencies: string[]
 }
 
 /**
- * Query with retry logic for better resilience
+ * Get Supabase client for browser/client-side usage
  */
-async function queryWithRetry<T>(
-  query: string,
-  params: any[] = [],
-  maxRetries: number = 3
-): Promise<QueryResult<T>> {
-  const currentPool = getPool();
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await currentPool.query<T>(query, params);
-    } catch (error) {
-      console.error(`Database query failed (attempt ${i + 1}/${maxRetries}):`, error);
-
-      if (i === maxRetries - 1) {
-        throw error;
-      }
-
-      // Wait before retrying (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-    }
-  }
-
-  throw new Error('Query failed after all retries');
+export function getSupabase() {
+  return createClient()
 }
 
 /**
- * Health check for database connection
+ * Get Supabase client for server-side usage
+ */
+export async function getSupabaseServer() {
+  const { createClient } = await import('@/lib/supabase/server')
+  return createClient()
+}
+
+/**
+ * Health check for Supabase connection
  */
 export async function checkConnection(): Promise<boolean> {
   try {
-    const result = await queryWithRetry('SELECT 1 as health');
-    return result.rows.length > 0;
+    const supabase = await getSupabaseServer()
+    const { data, error } = await supabase.from('server').select('id').limit(1)
+    return !error
   } catch (error) {
-    console.error('Database health check failed:', error);
-    return false;
+    console.error('Database health check failed:', error)
+    return false
   }
 }
 
@@ -278,35 +81,41 @@ export async function checkConnection(): Promise<boolean> {
  * Get servers with pagination
  */
 export async function getServers(limit: number = 20, offset: number = 0): Promise<Server[]> {
-  const result = await queryWithRetry<Server>(`
-    SELECT * FROM server
-    ORDER BY stars DESC, health_score DESC
-    LIMIT $1 OFFSET $2
-  `, [limit, offset]);
+  const supabase = await getSupabaseServer()
 
-  return result.rows;
+  const { data, error } = await supabase
+    .from('server')
+    .select('*')
+    .order('stars', { ascending: false })
+    .order('health_score', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (error) throw error
+  return data || []
 }
 
 /**
  * Get server by ID with all related data
  */
 export async function getServerById(id: number): Promise<{
-  server: Server | null;
-  tools: Tool[];
-  resources: ResourceTemplate[];
-  prompts: Prompt[];
-  dependencies: Dependency[];
-  contributors: Contributor[];
-  releases: Release[];
+  server: Server | null
+  tools: Tool[]
+  resources: ResourceTemplate[]
+  prompts: Prompt[]
+  dependencies: Dependency[]
+  contributors: Contributor[]
+  releases: Release[]
 }> {
-  const serverResult = await queryWithRetry<Server>(
-    'SELECT * FROM server WHERE id = $1',
-    [id]
-  );
+  const supabase = await getSupabaseServer()
 
-  const server = serverResult.rows[0] || null;
+  // Fetch server
+  const { data: server, error: serverError } = await supabase
+    .from('server')
+    .select('*')
+    .eq('id', id)
+    .single()
 
-  if (!server) {
+  if (serverError || !server) {
     return {
       server: null,
       tools: [],
@@ -315,44 +124,53 @@ export async function getServerById(id: number): Promise<{
       dependencies: [],
       contributors: [],
       releases: []
-    };
+    }
   }
 
-  // Fetch all related data in parallel for better performance
-  const [toolsResult, resourcesResult, promptsResult, depsResult, contribResult, releasesResult] =
-    await Promise.all([
-      queryWithRetry<Tool>('SELECT * FROM tool WHERE server_id = $1', [id]),
-      queryWithRetry<ResourceTemplate>('SELECT * FROM resourcetemplate WHERE server_id = $1', [id]),
-      queryWithRetry<Prompt>('SELECT * FROM prompt WHERE server_id = $1', [id]),
-      queryWithRetry<Dependency>('SELECT * FROM dependency WHERE server_id = $1', [id]),
-      queryWithRetry<Contributor>('SELECT * FROM contributor WHERE server_id = $1 ORDER BY commits DESC', [id]),
-      queryWithRetry<Release>('SELECT * FROM release WHERE server_id = $1 ORDER BY published_at DESC LIMIT 10', [id])
-    ]);
+  // Fetch all related data in parallel
+  const [
+    { data: tools },
+    { data: resources },
+    { data: prompts },
+    { data: dependencies },
+    { data: contributors },
+    { data: releases }
+  ] = await Promise.all([
+    supabase.from('tool').select('*').eq('server_id', id),
+    supabase.from('resourcetemplate').select('*').eq('server_id', id),
+    supabase.from('prompt').select('*').eq('server_id', id),
+    supabase.from('dependency').select('*').eq('server_id', id),
+    supabase.from('contributor').select('*').eq('server_id', id).order('commits', { ascending: false }),
+    supabase.from('release').select('*').eq('server_id', id).order('published_at', { ascending: false }).limit(10)
+  ])
 
   return {
     server,
-    tools: toolsResult.rows,
-    resources: resourcesResult.rows,
-    prompts: promptsResult.rows,
-    dependencies: depsResult.rows,
-    contributors: contribResult.rows,
-    releases: releasesResult.rows
-  };
+    tools: tools || [],
+    resources: resources || [],
+    prompts: prompts || [],
+    dependencies: dependencies || [],
+    contributors: contributors || [],
+    releases: releases || []
+  }
 }
 
 /**
  * Search servers by name or description (case-insensitive)
  */
 export async function searchServers(query: string, limit: number = 20): Promise<Server[]> {
-  const searchPattern = `%${query}%`;
-  const result = await queryWithRetry<Server>(`
-    SELECT * FROM server
-    WHERE name ILIKE $1 OR description ILIKE $2
-    ORDER BY stars DESC, health_score DESC
-    LIMIT $3
-  `, [searchPattern, searchPattern, limit]);
+  const supabase = await getSupabaseServer()
 
-  return result.rows;
+  const { data, error } = await supabase
+    .from('server')
+    .select('*')
+    .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+    .order('stars', { ascending: false })
+    .order('health_score', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data || []
 }
 
 /**
@@ -364,83 +182,68 @@ export async function filterServers(
   limit: number = 20,
   offset: number = 0
 ): Promise<Server[]> {
-  let query = 'SELECT * FROM server WHERE 1=1';
-  const params: (string | number)[] = [];
-  let paramCount = 1;
+  const supabase = await getSupabaseServer()
+
+  let query = supabase.from('server').select('*')
 
   if (hostType) {
-    query += ` AND host_type = $${paramCount++}`;
-    params.push(hostType);
+    query = query.eq('host_type', hostType)
   }
 
   if (riskLevel) {
-    query += ` AND risk_level = $${paramCount++}`;
-    params.push(riskLevel);
+    query = query.eq('risk_level', riskLevel)
   }
 
-  query += ` ORDER BY stars DESC, health_score DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
-  params.push(limit, offset);
+  const { data, error } = await query
+    .order('stars', { ascending: false })
+    .order('health_score', { ascending: false })
+    .range(offset, offset + limit - 1)
 
-  const result = await queryWithRetry<Server>(query, params);
-  return result.rows;
+  if (error) throw error
+  return data || []
 }
 
 /**
  * Get dashboard statistics
  */
 export async function getStats(): Promise<DashboardStats> {
+  const supabase = await getSupabaseServer()
+
   // Get basic stats
-  const basicStatsResult = await queryWithRetry<{
-    total_servers: string;
-    average_health_score: string;
-    total_stars: string;
-  }>(`
-    SELECT
-      COUNT(*) as total_servers,
-      COALESCE(AVG(health_score), 0) as average_health_score,
-      COALESCE(SUM(stars), 0) as total_stars
-    FROM server
-  `);
-  const basicStats = basicStatsResult.rows[0];
+  const { data: servers } = await supabase.from('server').select('health_score, stars, host_type, risk_level')
 
-  // Get tool count
-  const toolCountResult = await queryWithRetry<{ count: string }>(
-    'SELECT COUNT(*) as count FROM tool'
-  );
-  const toolCount = toolCountResult.rows[0];
+  const { count: toolCount } = await supabase.from('tool').select('*', { count: 'exact', head: true })
 
-  // Get servers by host type
-  const byHostTypeResult = await queryWithRetry<{ host_type: HostType; count: string }>(`
-    SELECT host_type, COUNT(*) as count
-    FROM server
-    GROUP BY host_type
-  `);
+  if (!servers) {
+    throw new Error('Failed to fetch server stats')
+  }
 
-  const servers_by_host_type = byHostTypeResult.rows.reduce((acc, row) => {
-    acc[row.host_type] = parseInt(row.count);
-    return acc;
-  }, {} as Record<HostType, number>);
+  const total_servers = servers.length
+  const average_health_score = Math.round(
+    servers.reduce((sum, s) => sum + s.health_score, 0) / total_servers
+  )
+  const total_stars = servers.reduce((sum, s) => sum + s.stars, 0)
 
-  // Get servers by risk level
-  const byRiskLevelResult = await queryWithRetry<{ risk_level: RiskLevel; count: string }>(`
-    SELECT risk_level, COUNT(*) as count
-    FROM server
-    GROUP BY risk_level
-  `);
+  // Group by host type
+  const servers_by_host_type = servers.reduce((acc, s) => {
+    acc[s.host_type] = (acc[s.host_type] || 0) + 1
+    return acc
+  }, {} as Record<HostType, number>)
 
-  const servers_by_risk_level = byRiskLevelResult.rows.reduce((acc, row) => {
-    acc[row.risk_level] = parseInt(row.count);
-    return acc;
-  }, {} as Record<RiskLevel, number>);
+  // Group by risk level
+  const servers_by_risk_level = servers.reduce((acc, s) => {
+    acc[s.risk_level] = (acc[s.risk_level] || 0) + 1
+    return acc
+  }, {} as Record<RiskLevel, number>)
 
   return {
-    total_servers: parseInt(basicStats.total_servers),
-    total_tools: parseInt(toolCount.count),
-    average_health_score: Math.round(parseFloat(basicStats.average_health_score)),
-    total_stars: parseInt(basicStats.total_stars),
+    total_servers,
+    total_tools: toolCount || 0,
+    average_health_score,
+    total_stars,
     servers_by_host_type,
     servers_by_risk_level
-  };
+  }
 }
 
 /**
@@ -448,82 +251,109 @@ export async function getStats(): Promise<DashboardStats> {
  * Returns nodes (servers) and edges (shared dependencies)
  */
 export async function getDependencyGraph(): Promise<{
-  nodes: DependencyGraphNode[];
-  edges: DependencyGraphEdge[];
+  nodes: DependencyGraphNode[]
+  edges: DependencyGraphEdge[]
 }> {
+  const supabase = await getSupabaseServer()
+
   // Get all servers as nodes
-  const nodesResult = await queryWithRetry<DependencyGraphNode>(`
-    SELECT id, name, host_type, stars, risk_level
-    FROM server
-    ORDER BY stars DESC
-    LIMIT 100
-  `);
-  const nodes = nodesResult.rows;
+  const { data: nodes, error: nodesError } = await supabase
+    .from('server')
+    .select('id, name, host_type, stars, risk_level')
+    .order('stars', { ascending: false })
+    .limit(100)
 
-  // Get edges based on shared dependencies
-  // PostgreSQL supports CTEs (Common Table Expressions)
-  const edgesResult = await queryWithRetry<{ source: number; target: number; shared_dependencies: string }>(`
-    WITH server_deps AS (
-      SELECT DISTINCT d1.server_id as source, d2.server_id as target, d1.library_name
-      FROM dependency d1
-      JOIN dependency d2 ON d1.library_name = d2.library_name AND d1.server_id < d2.server_id
-      WHERE d1.server_id IN (SELECT id FROM server ORDER BY stars DESC LIMIT 100)
-        AND d2.server_id IN (SELECT id FROM server ORDER BY stars DESC LIMIT 100)
-    )
-    SELECT
-      source,
-      target,
-      STRING_AGG(library_name, ',') as shared_dependencies
-    FROM server_deps
-    GROUP BY source, target
-    HAVING COUNT(*) >= 2
-  `);
+  if (nodesError || !nodes) {
+    throw nodesError || new Error('Failed to fetch nodes')
+  }
 
-  const edges = edgesResult.rows.map(edge => ({
-    source: edge.source,
-    target: edge.target,
-    shared_dependencies: edge.shared_dependencies.split(',')
-  }));
+  // Get dependencies for edge calculation
+  const serverIds = nodes.map(n => n.id)
+  const { data: dependencies } = await supabase
+    .from('dependency')
+    .select('server_id, library_name')
+    .in('server_id', serverIds)
+
+  // Calculate edges based on shared dependencies
+  const edges: DependencyGraphEdge[] = []
+  const depMap = new Map<string, number[]>()
+
+  dependencies?.forEach(dep => {
+    if (!depMap.has(dep.library_name)) {
+      depMap.set(dep.library_name, [])
+    }
+    depMap.get(dep.library_name)!.push(dep.server_id)
+  })
+
+  // Create edges for servers with shared dependencies
+  const edgeMap = new Map<string, string[]>()
+  depMap.forEach((serverIds, libName) => {
+    if (serverIds.length >= 2) {
+      for (let i = 0; i < serverIds.length; i++) {
+        for (let j = i + 1; j < serverIds.length; j++) {
+          const key = `${Math.min(serverIds[i], serverIds[j])}-${Math.max(serverIds[i], serverIds[j])}`
+          if (!edgeMap.has(key)) {
+            edgeMap.set(key, [])
+          }
+          edgeMap.get(key)!.push(libName)
+        }
+      }
+    }
+  })
+
+  edgeMap.forEach((libs, key) => {
+    if (libs.length >= 2) {
+      const [source, target] = key.split('-').map(Number)
+      edges.push({
+        source,
+        target,
+        shared_dependencies: libs
+      })
+    }
+  })
 
   return {
-    nodes,
+    nodes: nodes as DependencyGraphNode[],
     edges
-  };
+  }
 }
 
 /**
  * Get top servers by stars
  */
 export async function getTopServers(limit: number = 10): Promise<Server[]> {
-  const result = await queryWithRetry<Server>(`
-    SELECT * FROM server
-    ORDER BY stars DESC
-    LIMIT $1
-  `, [limit]);
+  const supabase = await getSupabaseServer()
 
-  return result.rows;
+  const { data, error } = await supabase
+    .from('server')
+    .select('*')
+    .order('stars', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data || []
 }
 
 /**
  * Get total count for pagination
  */
 export async function getTotalServersCount(hostType?: HostType, riskLevel?: RiskLevel): Promise<number> {
-  let query = 'SELECT COUNT(*) as count FROM server WHERE 1=1';
-  const params: (string | number)[] = [];
-  let paramCount = 1;
+  const supabase = await getSupabaseServer()
+
+  let query = supabase.from('server').select('*', { count: 'exact', head: true })
 
   if (hostType) {
-    query += ` AND host_type = $${paramCount++}`;
-    params.push(hostType);
+    query = query.eq('host_type', hostType)
   }
 
   if (riskLevel) {
-    query += ` AND risk_level = $${paramCount++}`;
-    params.push(riskLevel);
+    query = query.eq('risk_level', riskLevel)
   }
 
-  const result = await queryWithRetry<{ count: string }>(query, params);
-  return parseInt(result.rows[0].count);
+  const { count, error } = await query
+
+  if (error) throw error
+  return count || 0
 }
 
 /**
@@ -533,41 +363,38 @@ export async function getSocialPosts(
   limit: number = 50,
   offset: number = 0,
   filters?: {
-    platform?: SocialPlatform;
-    category?: ContentCategory;
-    sentiment?: SentimentScore;
-    minScore?: number;
+    platform?: SocialPlatform
+    category?: ContentCategory
+    sentiment?: SentimentScore
+    minScore?: number
   }
 ): Promise<SocialPost[]> {
-  let query = 'SELECT * FROM social_posts WHERE 1=1';
-  const params: (string | number)[] = [];
-  let paramCount = 1;
+  const supabase = await getSupabaseServer()
+
+  let query = supabase.from('social_posts').select('*')
 
   if (filters?.platform) {
-    query += ` AND platform = $${paramCount++}`;
-    params.push(filters.platform);
+    query = query.eq('platform', filters.platform)
   }
 
   if (filters?.category) {
-    query += ` AND category = $${paramCount++}`;
-    params.push(filters.category);
+    query = query.eq('category', filters.category)
   }
 
   if (filters?.sentiment) {
-    query += ` AND sentiment = $${paramCount++}`;
-    params.push(filters.sentiment);
+    query = query.eq('sentiment', filters.sentiment)
   }
 
   if (filters?.minScore !== undefined) {
-    query += ` AND score >= $${paramCount++}`;
-    params.push(filters.minScore);
+    query = query.gte('score', filters.minScore)
   }
 
-  query += ` ORDER BY platform_created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
-  params.push(limit, offset);
+  const { data, error } = await query
+    .order('platform_created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
-  const result = await queryWithRetry<SocialPost>(query, params);
-  return result.rows;
+  if (error) throw error
+  return data || []
 }
 
 /**
@@ -577,41 +404,38 @@ export async function getVideos(
   limit: number = 50,
   offset: number = 0,
   filters?: {
-    platform?: VideoPlatform;
-    category?: ContentCategory;
-    minViews?: number;
-    minEducationalValue?: number;
+    platform?: VideoPlatform
+    category?: ContentCategory
+    minViews?: number
+    minEducationalValue?: number
   }
 ): Promise<Video[]> {
-  let query = 'SELECT * FROM videos WHERE 1=1';
-  const params: (string | number)[] = [];
-  let paramCount = 1;
+  const supabase = await getSupabaseServer()
+
+  let query = supabase.from('videos').select('*')
 
   if (filters?.platform) {
-    query += ` AND platform = $${paramCount++}`;
-    params.push(filters.platform);
+    query = query.eq('platform', filters.platform)
   }
 
   if (filters?.category) {
-    query += ` AND category = $${paramCount++}`;
-    params.push(filters.category);
+    query = query.eq('category', filters.category)
   }
 
   if (filters?.minViews !== undefined) {
-    query += ` AND view_count >= $${paramCount++}`;
-    params.push(filters.minViews);
+    query = query.gte('view_count', filters.minViews)
   }
 
   if (filters?.minEducationalValue !== undefined) {
-    query += ` AND educational_value >= $${paramCount++}`;
-    params.push(filters.minEducationalValue);
+    query = query.gte('educational_value', filters.minEducationalValue)
   }
 
-  query += ` ORDER BY published_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
-  params.push(limit, offset);
+  const { data, error } = await query
+    .order('published_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
-  const result = await queryWithRetry<Video>(query, params);
-  return result.rows;
+  if (error) throw error
+  return data || []
 }
 
 /**
@@ -621,107 +445,150 @@ export async function getArticles(
   limit: number = 50,
   offset: number = 0,
   filters?: {
-    platform?: ArticlePlatform;
-    category?: ContentCategory;
-    minReadingTime?: number;
+    platform?: ArticlePlatform
+    category?: ContentCategory
+    minReadingTime?: number
   }
 ): Promise<Article[]> {
-  let query = 'SELECT * FROM articles WHERE 1=1';
-  const params: (string | number)[] = [];
-  let paramCount = 1;
+  const supabase = await getSupabaseServer()
+
+  let query = supabase.from('articles').select('*')
 
   if (filters?.platform) {
-    query += ` AND platform = $${paramCount++}`;
-    params.push(filters.platform);
+    query = query.eq('platform', filters.platform)
   }
 
   if (filters?.category) {
-    query += ` AND category = $${paramCount++}`;
-    params.push(filters.category);
+    query = query.eq('category', filters.category)
   }
 
   if (filters?.minReadingTime !== undefined) {
-    query += ` AND reading_time_minutes >= $${paramCount++}`;
-    params.push(filters.minReadingTime);
+    query = query.gte('reading_time_minutes', filters.minReadingTime)
   }
 
-  query += ` ORDER BY published_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
-  params.push(limit, offset);
+  const { data, error } = await query
+    .order('published_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
-  const result = await queryWithRetry<Article>(query, params);
-  return result.rows;
+  if (error) throw error
+  return data || []
 }
 
 /**
  * Get trending social media content
  */
 export async function getTrendingContent(days: number = 7, minScore: number = 50): Promise<{
-  posts: SocialPost[];
-  videos: Video[];
-  articles: Article[];
+  posts: SocialPost[]
+  videos: Video[]
+  articles: Article[]
 }> {
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoffIso = cutoffDate.toISOString();
+  const supabase = await getSupabaseServer()
+
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - days)
+  const cutoffIso = cutoffDate.toISOString()
 
   // Get trending posts, videos, and articles in parallel
-  const [postsResult, videosResult, articlesResult] = await Promise.all([
-    queryWithRetry<SocialPost>(`
-      SELECT * FROM social_posts
-      WHERE platform_created_at >= $1 AND score >= $2
-      ORDER BY score DESC
-      LIMIT 20
-    `, [cutoffIso, minScore]),
+  const [
+    { data: posts },
+    { data: videos },
+    { data: articles }
+  ] = await Promise.all([
+    supabase
+      .from('social_posts')
+      .select('*')
+      .gte('platform_created_at', cutoffIso)
+      .gte('score', minScore)
+      .order('score', { ascending: false })
+      .limit(20),
 
-    queryWithRetry<Video>(`
-      SELECT * FROM videos
-      WHERE published_at >= $1 AND view_count >= $2
-      ORDER BY view_count DESC
-      LIMIT 20
-    `, [cutoffIso, minScore]),
+    supabase
+      .from('videos')
+      .select('*')
+      .gte('published_at', cutoffIso)
+      .gte('view_count', minScore)
+      .order('view_count', { ascending: false })
+      .limit(20),
 
-    queryWithRetry<Article>(`
-      SELECT * FROM articles
-      WHERE published_at >= $1 AND like_count >= $2
-      ORDER BY like_count DESC
-      LIMIT 20
-    `, [cutoffIso, minScore])
-  ]);
+    supabase
+      .from('articles')
+      .select('*')
+      .gte('published_at', cutoffIso)
+      .gte('like_count', minScore)
+      .order('like_count', { ascending: false })
+      .limit(20)
+  ])
 
   return {
-    posts: postsResult.rows,
-    videos: videosResult.rows,
-    articles: articlesResult.rows
-  };
+    posts: posts || [],
+    videos: videos || [],
+    articles: articles || []
+  }
 }
 
 /**
  * Get total counts for social media content
  */
 export async function getSocialContentCounts(): Promise<{
-  posts: number;
-  videos: number;
-  articles: number;
+  posts: number
+  videos: number
+  articles: number
 }> {
-  const [postsResult, videosResult, articlesResult] = await Promise.all([
-    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM social_posts'),
-    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM videos'),
-    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM articles')
-  ]);
+  const supabase = await getSupabaseServer()
+
+  const [
+    { count: postsCount },
+    { count: videosCount },
+    { count: articlesCount }
+  ] = await Promise.all([
+    supabase.from('social_posts').select('*', { count: 'exact', head: true }),
+    supabase.from('videos').select('*', { count: 'exact', head: true }),
+    supabase.from('articles').select('*', { count: 'exact', head: true })
+  ])
 
   return {
-    posts: parseInt(postsResult.rows[0].count),
-    videos: parseInt(videosResult.rows[0].count),
-    articles: parseInt(articlesResult.rows[0].count),
-  };
+    posts: postsCount || 0,
+    videos: videosCount || 0,
+    articles: articlesCount || 0
+  }
 }
 
 /**
- * Close the database pool (useful for cleanup)
+ * Subscribe to real-time changes on a table
  */
-export async function closePool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+export function subscribeToServers(callback: (payload: any) => void) {
+  const supabase = getSupabase()
+
+  return supabase
+    .channel('servers')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'server'
+      },
+      callback
+    )
+    .subscribe()
+}
+
+/**
+ * Subscribe to real-time changes on social posts
+ */
+export function subscribeToSocialPosts(callback: (payload: any) => void) {
+  const supabase = getSupabase()
+
+  return supabase
+    .channel('social_posts')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'social_posts'
+      },
+      callback
+    )
+    .subscribe()
 }

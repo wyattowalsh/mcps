@@ -298,6 +298,46 @@ class Settings(BaseSettings):
 
     youtube_api_key: str | None = Field(default=None, description="YouTube Data API key")
 
+    # Supabase Configuration
+    supabase_url: str = Field(
+        default="",
+        description="Supabase project URL (https://xxxxx.supabase.co)",
+    )
+    supabase_anon_key: str = Field(
+        default="",
+        description="Supabase anonymous/public API key",
+    )
+    supabase_service_role_key: str = Field(
+        default="",
+        description="Supabase service role key (admin access, bypasses RLS)",
+    )
+    supabase_jwt_secret: str = Field(
+        default="",
+        description="Supabase JWT secret for token verification",
+    )
+
+    # Supabase PostgreSQL Direct Connection (for SQLAlchemy ORM)
+    supabase_db_password: str = Field(
+        default="",
+        description="Supabase PostgreSQL database password",
+    )
+    supabase_db_host: str = Field(
+        default="",
+        description="Supabase PostgreSQL host (db.xxxxx.supabase.co)",
+    )
+
+    # Supabase Storage
+    supabase_storage_bucket: str = Field(
+        default="mcps-files",
+        description="Supabase Storage bucket name",
+    )
+
+    # Use local PostgreSQL or Supabase
+    use_supabase: bool = Field(
+        default=False,
+        description="Use Supabase instead of local PostgreSQL",
+    )
+
     @computed_field  # type: ignore[misc]
     @property
     def redis_url_computed(self) -> str:
@@ -320,12 +360,20 @@ class Settings(BaseSettings):
 
         Priority:
         1. Explicit DATABASE_URL environment variable
-        2. PostgreSQL (default for production)
-        3. SQLite (fallback for development)
+        2. Supabase PostgreSQL (if use_supabase is enabled)
+        3. Local PostgreSQL (default for production)
+        4. SQLite (fallback for development)
         """
         # If DATABASE_URL is explicitly set, use it
         if self.database_url:
             return self.database_url
+
+        # If Supabase is enabled, use Supabase PostgreSQL
+        if self.use_supabase and self.supabase_db_host and self.supabase_db_password:
+            return (
+                f"postgresql+asyncpg://postgres:{self.supabase_db_password}"
+                f"@{self.supabase_db_host}:5432/postgres"
+            )
 
         # If use_sqlite is enabled, use SQLite
         if self.use_sqlite:
@@ -333,7 +381,7 @@ class Settings(BaseSettings):
             self.database_path.parent.mkdir(parents=True, exist_ok=True)
             return f"sqlite+aiosqlite:///{self.database_path}"
 
-        # Default to PostgreSQL (production)
+        # Default to local PostgreSQL (production)
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

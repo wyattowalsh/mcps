@@ -495,3 +495,102 @@ class HealthCheckBypassMiddleware(BaseHTTPMiddleware):
             request.state.is_health_check = True
 
         return await call_next(request)
+
+
+# =============================================================================
+# Supabase Auth Middleware
+# =============================================================================
+
+
+class SupabaseAuthMiddleware(BaseHTTPMiddleware):
+    """Middleware to verify Supabase JWT tokens.
+
+    This middleware extracts and verifies JWT tokens from the Authorization header,
+    attaching user information to the request state if authentication succeeds.
+
+    Public endpoints (health, metrics, docs) skip authentication.
+    For other endpoints, authentication is optional unless explicitly required.
+    """
+
+    def __init__(
+        self,
+        app,
+        public_paths: list[str] = None,
+        enabled: bool = True,
+    ):
+        """Initialize Supabase auth middleware.
+
+        Args:
+            app: FastAPI application
+            public_paths: List of paths that don't require authentication
+            enabled: Enable/disable auth middleware (useful for testing)
+        """
+        super().__init__(app)
+        self.public_paths = public_paths or [
+            "/health",
+            "/healthz",
+            "/ready",
+            "/metrics",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/",
+        ]
+        self.enabled = enabled
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Verify JWT token and attach user to request.
+
+        Args:
+            request: Incoming request
+            call_next: Next middleware or endpoint
+
+        Returns:
+            Response or 401 error if auth fails
+        """
+        # Skip auth if disabled or path is public
+        if not self.enabled or any(
+            request.url.path.startswith(path) for path in self.public_paths
+        ):
+            return await call_next(request)
+
+        # Extract token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            # Allow unauthenticated access but don't set user
+            return await call_next(request)
+
+        token = auth_header.replace("Bearer ", "")
+
+        try:
+            # Import here to avoid circular imports
+            from .supabase import is_supabase_configured, supabase
+
+            # Check if Supabase is configured
+            if not is_supabase_configured():
+                logger.warning("Supabase auth attempted but not configured")
+                return await call_next(request)
+
+            # Verify token with Supabase
+            client = supabase()
+            user_response = client.auth.get_user(token)
+
+            # Attach user to request state
+            if user_response and user_response.user:
+                request.state.user = user_response.user
+                request.state.user_id = user_response.user.id
+                logger.debug(
+                    f"Authenticated user: {user_response.user.id}",
+                    extra={"user_id": user_response.user.id},
+                )
+
+        except ImportError:
+            logger.warning("Supabase package not installed, skipping auth")
+        except Exception as e:
+            logger.warning(f"Auth verification failed: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Invalid authentication token"},
+            )
+
+        return await call_next(request)

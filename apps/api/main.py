@@ -18,11 +18,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import (
     Depends,
     FastAPI,
+    File,
     HTTPException,
     Query,
     Request,
     Response,
     Security,
+    UploadFile,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +53,7 @@ from packages.harvester.middleware import (
     RateLimitHeadersMiddleware,
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
+    SupabaseAuthMiddleware,
     create_compression_middleware,
 )
 from packages.harvester.models.models import (
@@ -127,7 +130,12 @@ app.add_middleware(RateLimitHeadersMiddleware)
 # 8. Request ID tracking
 app.add_middleware(RequestIDMiddleware)
 
-# 9. CORS (innermost, processes after all others)
+# 9. Supabase Auth (optional, only if Supabase is configured)
+if settings.supabase_url and settings.supabase_anon_key:
+    app.add_middleware(SupabaseAuthMiddleware, enabled=True)
+    logger.info("Supabase authentication middleware enabled")
+
+# 10. CORS (innermost, processes after all others)
 if settings.cors_enabled:
     app.add_middleware(
         CORSMiddleware,
@@ -1488,6 +1496,330 @@ async def get_trending_content(
     articles = articles_result.scalars().all()
 
     return {"posts": posts, "videos": videos, "articles": articles, "days": days}
+
+
+# --- Supabase Authentication Endpoints ---
+
+
+@app.post("/auth/signup", tags=["Authentication"])
+@limiter.limit("10/minute")
+async def signup(
+    email: str = Query(..., description="User email address"),
+    password: str = Query(..., min_length=8, description="User password (min 8 characters)"),
+):
+    """Sign up new user with Supabase Auth.
+
+    Args:
+        email: User email address
+        password: User password (minimum 8 characters)
+
+    Returns:
+        User and session information
+
+    Raises:
+        HTTPException: If signup fails or Supabase is not configured
+    """
+    try:
+        from packages.harvester.supabase import is_supabase_configured, supabase
+
+        if not is_supabase_configured():
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Supabase authentication is not configured",
+            )
+
+        client = supabase()
+        result = client.auth.sign_up({"email": email, "password": password})
+
+        if result.user:
+            logger.info(f"New user signed up: {result.user.id}")
+            return {
+                "user": {
+                    "id": result.user.id,
+                    "email": result.user.email,
+                    "created_at": result.user.created_at,
+                },
+                "session": {
+                    "access_token": result.session.access_token if result.session else None,
+                    "refresh_token": result.session.refresh_token if result.session else None,
+                },
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to create user",
+            )
+
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Supabase package not installed",
+        )
+    except Exception as e:
+        logger.error(f"Signup failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@app.post("/auth/login", tags=["Authentication"])
+@limiter.limit("20/minute")
+async def login(
+    email: str = Query(..., description="User email address"),
+    password: str = Query(..., description="User password"),
+):
+    """Login with Supabase Auth.
+
+    Args:
+        email: User email address
+        password: User password
+
+    Returns:
+        User information and access token
+
+    Raises:
+        HTTPException: If login fails or Supabase is not configured
+    """
+    try:
+        from packages.harvester.supabase import is_supabase_configured, supabase
+
+        if not is_supabase_configured():
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Supabase authentication is not configured",
+            )
+
+        client = supabase()
+        result = client.auth.sign_in_with_password({"email": email, "password": password})
+
+        if result.user and result.session:
+            logger.info(f"User logged in: {result.user.id}")
+            return {
+                "user": {
+                    "id": result.user.id,
+                    "email": result.user.email,
+                },
+                "access_token": result.session.access_token,
+                "refresh_token": result.session.refresh_token,
+                "expires_at": result.session.expires_at,
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+            )
+
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Supabase package not installed",
+        )
+    except Exception as e:
+        logger.error(f"Login failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+
+@app.post("/auth/logout", tags=["Authentication"])
+@limiter.limit("20/minute")
+async def logout(request: Request):
+    """Logout and invalidate session.
+
+    Args:
+        request: FastAPI request with authenticated user
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If logout fails
+    """
+    try:
+        from packages.harvester.supabase import is_supabase_configured, supabase
+
+        if not is_supabase_configured():
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Supabase authentication is not configured",
+            )
+
+        client = supabase()
+        client.auth.sign_out()
+        logger.info("User logged out")
+        return {"message": "Logged out successfully"}
+
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Supabase package not installed",
+        )
+    except Exception as e:
+        logger.error(f"Logout failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get("/auth/user", tags=["Authentication"])
+@limiter.limit("60/minute")
+async def get_current_user(request: Request):
+    """Get current authenticated user.
+
+    Args:
+        request: FastAPI request with authenticated user
+
+    Returns:
+        User information
+
+    Raises:
+        HTTPException: If user is not authenticated
+    """
+    if not hasattr(request.state, "user"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    user = request.state.user
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+        "last_sign_in_at": user.last_sign_in_at,
+    }
+
+
+# --- Supabase Storage Endpoints ---
+
+
+@app.post("/storage/upload", tags=["Storage"])
+@limiter.limit("30/minute")
+async def upload_file_endpoint(
+    request: Request,
+    file: UploadFile = File(..., description="File to upload"),
+    path: str = Query(..., description="Destination path in storage"),
+):
+    """Upload file to Supabase Storage.
+
+    Args:
+        request: FastAPI request
+        file: File to upload
+        path: Destination path in storage bucket
+
+    Returns:
+        Public URL and path
+
+    Raises:
+        HTTPException: If upload fails or Supabase is not configured
+    """
+    try:
+        from packages.harvester.storage import SupabaseStorage
+
+        # Use admin client for backend uploads
+        storage = SupabaseStorage(use_admin=True)
+        public_url = await storage.upload_file(path, file.file, file.content_type)
+
+        logger.info(f"File uploaded to Supabase Storage: {path}")
+        return {"url": public_url, "path": path, "content_type": file.content_type}
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"File upload failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload failed: {str(e)}",
+        )
+
+
+@app.delete("/storage/delete/{file_path:path}", tags=["Storage"])
+@limiter.limit("20/minute")
+async def delete_file_endpoint(
+    file_path: str,
+    request: Request,
+    role: str = Depends(verify_admin),
+):
+    """Delete file from Supabase Storage (admin only).
+
+    Args:
+        file_path: Path to file in storage bucket
+        request: FastAPI request
+        role: User role (must be admin)
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If deletion fails
+    """
+    try:
+        from packages.harvester.storage import SupabaseStorage
+
+        storage = SupabaseStorage(use_admin=True)
+        await storage.delete_file(file_path)
+
+        logger.info(f"File deleted from Supabase Storage: {file_path}")
+        return {"message": f"File deleted successfully: {file_path}"}
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"File deletion failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Deletion failed: {str(e)}",
+        )
+
+
+@app.get("/storage/list", tags=["Storage"])
+@limiter.limit("30/minute")
+async def list_files_endpoint(
+    path: str = Query("", description="Directory path to list"),
+    limit: int = Query(100, ge=1, le=1000, description="Max files to return"),
+    offset: int = Query(0, ge=0, description="Number of files to skip"),
+):
+    """List files in Supabase Storage bucket.
+
+    Args:
+        path: Directory path to list (empty for root)
+        limit: Maximum files to return
+        offset: Number of files to skip
+
+    Returns:
+        List of files
+
+    Raises:
+        HTTPException: If listing fails
+    """
+    try:
+        from packages.harvester.storage import SupabaseStorage
+
+        storage = SupabaseStorage(use_admin=True)
+        files = await storage.list_files(path, limit, offset)
+
+        return {"files": files, "count": len(files), "path": path}
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"File listing failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Listing failed: {str(e)}",
+        )
 
 
 # --- Root Endpoint ---

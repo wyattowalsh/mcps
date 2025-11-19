@@ -50,6 +50,11 @@ help:
 	@echo "  make social-twitter  - Harvest Twitter/X only"
 	@echo "  make social-youtube  - Harvest YouTube only"
 	@echo ""
+	@echo "☁️  Supabase Integration:"
+	@echo "  make supabase-status - Check Supabase configuration"
+	@echo "  make supabase-setup  - Run Supabase setup script"
+	@echo "  make supabase-test   - Test Supabase storage"
+	@echo ""
 	@echo "🔍 Monitoring & Health:"
 	@echo "  make health          - Check all service health"
 	@echo "  make metrics         - View Prometheus metrics"
@@ -262,6 +267,20 @@ db-psql:
 db-health:
 	@echo "❤️  Checking database health..."
 	@curl -s http://localhost:8000/health/db | python -m json.tool || echo "API not running"
+
+# Supabase Integration
+supabase-status:
+	@echo "☁️  Checking Supabase configuration..."
+	uv run python -m packages.harvester.cli supabase-status
+
+supabase-setup:
+	@echo "⚙️  Running Supabase setup script..."
+	@echo "Please run scripts/supabase-setup.sql in your Supabase SQL Editor"
+	@echo "Dashboard: https://app.supabase.com"
+
+supabase-test:
+	@echo "🧪 Testing Supabase storage operations..."
+	uv run python -m packages.harvester.cli supabase-test-storage
 
 # Social Media Harvesting
 social-harvest:

@@ -4,10 +4,15 @@ This module provides production-ready database connection management with:
 - Automatic connection pooling
 - Health checks and connection testing
 - Retry logic for transient failures
-- Support for both PostgreSQL (production) and SQLite (development)
+- Support for PostgreSQL (local or Supabase), and SQLite (development)
+- Supabase integration with hybrid approach (SQLAlchemy ORM + Supabase features)
 - Query performance monitoring
 - Slow query detection
 - Connection pool metrics
+
+Note: When using Supabase, this module handles the PostgreSQL connection via SQLAlchemy,
+while Auth, Storage, and Realtime features are accessed via the Supabase client
+(see packages.harvester.supabase module).
 """
 
 import asyncio
