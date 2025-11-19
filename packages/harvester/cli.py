@@ -433,9 +433,7 @@ async def _show_status() -> None:
             status_counts = {}
             for status in ["pending", "processing", "completed", "failed", "skipped"]:
                 count = await session.execute(
-                    select(func.count(ProcessingLog.id)).where(
-                        ProcessingLog.status == status
-                    )
+                    select(func.count(ProcessingLog.id)).where(ProcessingLog.status == status)
                 )
                 status_counts[status] = count.scalar()
 
@@ -647,9 +645,7 @@ def prune(
 
     # Confirm action
     if days < 90:
-        typer.echo(
-            f"\nWARNING: You are about to prune servers inactive for only {days} days."
-        )
+        typer.echo(f"\nWARNING: You are about to prune servers inactive for only {days} days.")
         confirm = typer.confirm("Are you sure you want to continue?")
         if not confirm:
             typer.echo("Pruning cancelled.")
@@ -750,11 +746,11 @@ async def _show_stats() -> None:
             typer.echo(f"\nAverage Health Score: {stats['avg_health_score']}")
 
             typer.echo("\nTop Servers by Stars:")
-            for server in stats['top_servers']:
+            for server in stats["top_servers"]:
                 typer.echo(f"  {server['name']}: {server['stars']} stars")
 
             typer.echo("\nRecently Updated:")
-            for server in stats['recently_updated']:
+            for server in stats["recently_updated"]:
                 typer.echo(f"  {server['name']} - {server['last_indexed']}")
 
             typer.echo("\nProcessing Status:")
@@ -770,6 +766,146 @@ async def _show_stats() -> None:
         sys.exit(1)
     finally:
         await close_db()
+
+
+@app.command(name="health")
+def health_check(
+    component: str = typer.Option(
+        "all",
+        "--component",
+        "-c",
+        help="Component to check (all, db, cache, api)",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Check health of MCPS components.
+
+    Checks the health status of database, cache, and other components.
+
+    Examples:
+        # Check all components
+        python -m packages.harvester.cli health
+
+        # Check database only
+        python -m packages.harvester.cli health --component db
+    """
+    configure_logging(log_level)
+    logger.info(f"Checking health of {component}...")
+
+    try:
+        asyncio.run(_check_health(component))
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        sys.exit(1)
+
+
+async def _check_health(component: str) -> None:
+    """Check component health."""
+    from packages.harvester.cache import check_cache_health
+    from packages.harvester.database import check_health as check_db_health
+
+    await init_db()
+
+    try:
+        health_status = {}
+
+        # Check database
+        if component in ("all", "db"):
+            logger.info("Checking database health...")
+            db_health = await check_db_health()
+            health_status["database"] = db_health
+
+            if db_health.get("healthy"):
+                logger.success(f"✓ Database healthy (latency: {db_health['latency_ms']}ms)")
+            else:
+                logger.error(f"✗ Database unhealthy: {db_health.get('error')}")
+
+        # Check cache
+        if component in ("all", "cache"):
+            logger.info("Checking cache health...")
+            cache_health = await check_cache_health()
+            health_status["cache"] = cache_health
+
+            if cache_health.get("healthy"):
+                logger.success(f"✓ Cache healthy (latency: {cache_health['latency_ms']}ms)")
+            else:
+                logger.error(f"✗ Cache unhealthy: {cache_health.get('error')}")
+
+        # Display summary
+        typer.echo("\n=== Health Check Summary ===\n")
+        for comp, status in health_status.items():
+            typer.echo(
+                f"{comp.capitalize()}: {'✓ Healthy' if status.get('healthy') else '✗ Unhealthy'}"
+            )
+            if status.get("healthy"):
+                typer.echo(f"  Latency: {status.get('latency_ms')}ms")
+                if "pool_size" in status:
+                    typer.echo(
+                        f"  Pool: {status.get('pool_checked_in')}/{status.get('pool_size')} connections"
+                    )
+            else:
+                typer.echo(f"  Error: {status.get('error')}")
+        typer.echo()
+
+    finally:
+        await close_db()
+
+
+@app.command(name="cache-clear")
+def cache_clear(
+    pattern: str = typer.Option(
+        "*",
+        "--pattern",
+        "-p",
+        help="Cache key pattern to clear (e.g., 'servers:*', 'stats:*')",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Clear Redis cache.
+
+    Clears cached data from Redis. Use patterns to target specific keys.
+
+    Examples:
+        # Clear all cache
+        python -m packages.harvester.cli cache-clear
+
+        # Clear only server cache
+        python -m packages.harvester.cli cache-clear --pattern "servers:*"
+
+        # Clear stats cache
+        python -m packages.harvester.cli cache-clear --pattern "stats:*"
+    """
+    configure_logging(log_level)
+    logger.info(f"Clearing cache (pattern: {pattern})...")
+
+    try:
+        asyncio.run(_clear_cache(pattern))
+    except Exception as e:
+        logger.error(f"Cache clear failed: {e}")
+        sys.exit(1)
+
+
+async def _clear_cache(pattern: str) -> None:
+    """Clear cache with pattern."""
+    from packages.harvester.cache import clear_cache_pattern
+
+    try:
+        count = await clear_cache_pattern(pattern)
+        logger.success(f"Cleared {count} cache keys matching pattern: {pattern}")
+        typer.echo(f"\n✓ Cleared {count} cache keys\n")
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise
 
 
 @app.command()

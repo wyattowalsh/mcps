@@ -379,9 +379,7 @@ class Company(BaseEntity, table=True):
     description: str = Field(default="")
 
     # Classification
-    company_type: str = Field(
-        default="user", index=True
-    )  # user, contributor, sponsor, vendor
+    company_type: str = Field(default="user", index=True)  # user, contributor, sponsor, vendor
     industry: Optional[str] = Field(default=None, index=True)
     size: Optional[str] = Field(default=None)  # startup, small, medium, enterprise
 

@@ -10,8 +10,8 @@ import os
 from typing import List, Optional
 
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.harvester.models.models import Tool, ToolEmbedding
 
@@ -95,7 +95,9 @@ class EmbeddingService:
         # Process in batches
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            logger.debug(f"Generating embeddings for batch {i // batch_size + 1} ({len(batch)} texts)")
+            logger.debug(
+                f"Generating embeddings for batch {i // batch_size + 1} ({len(batch)} texts)"
+            )
 
             try:
                 # Call OpenAI API

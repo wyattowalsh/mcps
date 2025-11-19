@@ -45,6 +45,38 @@ services:
       -c max_wal_size=4GB
 
   # =============================================================================
+  # Redis - Caching and session storage
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: mcps-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis-data:/data
+    networks:
+      - mcps-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    labels:
+      - "com.mcps.service=cache"
+      - "com.mcps.description=Redis cache and session storage"
+
+  # =============================================================================
   # pgAdmin - PostgreSQL admin interface (optional, for development)
   # =============================================================================
   pgadmin:
@@ -97,6 +129,11 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mcps_password}
       - POSTGRES_DB=${POSTGRES_DB:-mcps}
 
+      # Redis configuration
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
       # Connection Pool Settings
       - DB_POOL_SIZE=20
       - DB_MAX_OVERFLOW=10
@@ -129,6 +166,8 @@ services:
       - mcps-network
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -255,6 +294,12 @@ volumes:
     labels:
       - "com.mcps.volume=pgadmin"
       - "com.mcps.description=pgAdmin configuration and data"
+
+  redis-data:
+    driver: local
+    labels:
+      - "com.mcps.volume=redis"
+      - "com.mcps.description=Redis persistence data"
 
   mcps-data:
     driver: local

@@ -19,13 +19,13 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from packages.harvester.core.base_harvester import BaseHarvester
+from packages.harvester.models import Server
 from packages.harvester.models.social import (
     ContentCategory,
     SentimentScore,
     SocialPlatform,
     SocialPost,
 )
-from packages.harvester.models import Server
 
 
 class RedditConfig(BaseSettings):
@@ -72,9 +72,7 @@ class RedditConfig(BaseSettings):
 
     # Rate limiting
     requests_per_minute: int = Field(default=60, description="Reddit API rate limit")
-    min_score_threshold: int = Field(
-        default=5, description="Minimum upvote score to store post"
-    )
+    min_score_threshold: int = Field(default=5, description="Minimum upvote score to store post")
 
 
 class RedditHarvester(BaseHarvester):
@@ -445,9 +443,7 @@ class RedditHarvester(BaseHarvester):
 
         for url in post.mentioned_urls:
             # Try to find matching server
-            result = await session.execute(
-                select(Server).where(Server.primary_url.contains(url))
-            )
+            result = await session.execute(select(Server).where(Server.primary_url.contains(url)))
             server = result.scalar_one_or_none()
 
             if server:

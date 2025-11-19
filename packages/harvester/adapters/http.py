@@ -166,10 +166,7 @@ class HTTPHarvester(BaseHarvester):
                 is_mcp = True  # SSE endpoint is likely MCP
 
             if not is_mcp:
-                logger.warning(
-                    f"No MCP indicators found at {url}. "
-                    "This may not be an MCP server."
-                )
+                logger.warning(f"No MCP indicators found at {url}. This may not be an MCP server.")
 
             logger.success(f"Successfully probed endpoint: {url} (is_mcp={is_mcp})")
 
@@ -185,15 +182,11 @@ class HTTPHarvester(BaseHarvester):
         except httpx.TimeoutException as e:
             raise HarvesterError(f"Timeout connecting to {url}") from e
         except httpx.HTTPStatusError as e:
-            raise HarvesterError(
-                f"HTTP error {e.response.status_code} from {url}"
-            ) from e
+            raise HarvesterError(f"HTTP error {e.response.status_code} from {url}") from e
         except HTTPClientError as e:
             raise HarvesterError(f"Failed to probe endpoint {url}: {str(e)}") from e
         except Exception as e:
-            raise HarvesterError(
-                f"Unexpected error probing endpoint {url}: {str(e)}"
-            ) from e
+            raise HarvesterError(f"Unexpected error probing endpoint {url}: {str(e)}") from e
 
     async def parse(self, data: Dict[str, Any]) -> Server:
         """Parse HTTP endpoint data and perform MCP introspection.
@@ -240,8 +233,7 @@ class HTTPHarvester(BaseHarvester):
             # If not detected as MCP, return minimal server
             if not is_mcp:
                 logger.warning(
-                    f"Endpoint {url} not detected as MCP server. "
-                    "Returning minimal server entity."
+                    f"Endpoint {url} not detected as MCP server. Returning minimal server entity."
                 )
                 server.risk_level = RiskLevel.UNKNOWN
                 server.health_score = 30
@@ -289,9 +281,7 @@ class HTTPHarvester(BaseHarvester):
                     if server_info.get("name"):
                         server.name = server_info["name"]
                     if server_info.get("version"):
-                        server.description = (
-                            f"{server.description} (v{server_info['version']})"
-                        )
+                        server.description = f"{server.description} (v{server_info['version']})"
 
                     logger.success(
                         f"Introspected MCP server: {len(server.tools)} tools, "
@@ -528,7 +518,10 @@ class HTTPHarvester(BaseHarvester):
 
                     if resources_response.status_code == 200:
                         resources_result = resources_response.json()
-                        if "result" in resources_result and "resources" in resources_result["result"]:
+                        if (
+                            "result" in resources_result
+                            and "resources" in resources_result["result"]
+                        ):
                             result["resources"] = resources_result["result"]["resources"]
                             logger.debug(f"Found {len(result['resources'])} resources")
 

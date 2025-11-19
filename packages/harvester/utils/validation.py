@@ -62,9 +62,7 @@ def validate_server_update(updates: Dict[str, Any]) -> None:
     # Check for protected fields
     protected_found = set(updates.keys()) & PROTECTED_FIELDS
     if protected_found:
-        raise ValidationError(
-            f"Cannot update protected fields: {', '.join(protected_found)}"
-        )
+        raise ValidationError(f"Cannot update protected fields: {', '.join(protected_found)}")
 
     # Check for unknown fields
     unknown_fields = set(updates.keys()) - ALLOWED_SERVER_FIELDS
@@ -248,9 +246,7 @@ def validate_bulk_filters(filters: Dict[str, Any]) -> None:
 
     unknown_fields = set(filters.keys()) - allowed_filter_fields
     if unknown_fields:
-        raise ValidationError(
-            f"Unknown filter fields: {', '.join(unknown_fields)}"
-        )
+        raise ValidationError(f"Unknown filter fields: {', '.join(unknown_fields)}")
 
 
 def validate_prune_days(days: int) -> None:

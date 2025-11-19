@@ -56,12 +56,8 @@ class TwitterConfig(BaseSettings):
     )
 
     # Rate limiting
-    max_results_per_query: int = Field(
-        default=100, description="Max tweets per query (10-100)"
-    )
-    min_likes_threshold: int = Field(
-        default=5, description="Minimum likes to store tweet"
-    )
+    max_results_per_query: int = Field(default=100, description="Max tweets per query (10-100)")
+    min_likes_threshold: int = Field(default=5, description="Minimum likes to store tweet")
 
 
 class TwitterHarvester(BaseHarvester):
@@ -191,9 +187,7 @@ class TwitterHarvester(BaseHarvester):
                 is_retweet = False
                 retweet_count = 0
                 if tweet.referenced_tweets:
-                    is_retweet = any(
-                        ref.type == "retweeted" for ref in tweet.referenced_tweets
-                    )
+                    is_retweet = any(ref.type == "retweeted" for ref in tweet.referenced_tweets)
 
                 metrics = tweet.public_metrics or {}
 
@@ -256,7 +250,9 @@ class TwitterHarvester(BaseHarvester):
             quality_score = self._calculate_quality(tweet_data)
 
             # Build tweet URL
-            tweet_url = f"https://twitter.com/{tweet_data['author_username']}/status/{tweet_data['id']}"
+            tweet_url = (
+                f"https://twitter.com/{tweet_data['author_username']}/status/{tweet_data['id']}"
+            )
 
             post = SocialPost(
                 platform=SocialPlatform.TWITTER,
@@ -389,9 +385,7 @@ class TwitterHarvester(BaseHarvester):
         # Extract from text using patterns
         for pattern in self.url_patterns.values():
             matches = pattern.findall(text)
-            all_urls.extend(
-                [f"{m[0]}/{m[1]}" if isinstance(m, tuple) else m for m in matches]
-            )
+            all_urls.extend([f"{m[0]}/{m[1]}" if isinstance(m, tuple) else m for m in matches])
 
         return list(set(all_urls))  # Deduplicate
 
@@ -411,9 +405,7 @@ class TwitterHarvester(BaseHarvester):
             return ContentCategory.QUESTION
         elif any(word in text for word in ["built", "made", "created", "check out my"]):
             return ContentCategory.SHOWCASE
-        elif any(
-            tag in hashtags for tag in ["news", "announcement", "release", "update"]
-        ):
+        elif any(tag in hashtags for tag in ["news", "announcement", "release", "update"]):
             return ContentCategory.NEWS
         elif tweet_data.get("is_retweet"):
             return ContentCategory.OTHER
@@ -504,9 +496,7 @@ class TwitterHarvester(BaseHarvester):
 
         for url in post.mentioned_urls:
             # Try to find matching server
-            result = await session.execute(
-                select(Server).where(Server.primary_url.contains(url))
-            )
+            result = await session.execute(select(Server).where(Server.primary_url.contains(url)))
             server = result.scalar_one_or_none()
 
             if server:

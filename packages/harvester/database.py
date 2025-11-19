@@ -5,9 +5,13 @@ This module provides production-ready database connection management with:
 - Health checks and connection testing
 - Retry logic for transient failures
 - Support for both PostgreSQL (production) and SQLite (development)
+- Query performance monitoring
+- Slow query detection
+- Connection pool metrics
 """
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict
 
@@ -25,6 +29,19 @@ from tenacity import (
 )
 
 from .settings import settings
+
+# Try to import metrics (optional)
+try:
+    from .metrics import (
+        collect_db_pool_metrics,
+        db_connection_errors_total,
+        db_queries_total,
+        db_query_duration_seconds,
+    )
+
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
 
 # Create async engine with production-ready configuration
 engine_kwargs: Dict[str, Any] = {
@@ -92,6 +109,55 @@ if settings.is_postgresql:
     def receive_close(dbapi_conn, connection_record):
         """Log closed database connections."""
         logger.debug(f"Database connection closed: {id(dbapi_conn)}")
+
+    @event.listens_for(engine.sync_engine, "handle_error")
+    def receive_error(exception_context):
+        """Log and track database errors."""
+        error = exception_context.original_exception
+        logger.error(f"Database error: {error}", exc_info=True)
+
+        # Track error metrics
+        if METRICS_AVAILABLE:
+            error_type = error.__class__.__name__
+            db_connection_errors_total.labels(error_type=error_type).inc()
+
+
+# Query performance monitoring
+@event.listens_for(engine.sync_engine, "before_cursor_execute")
+def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """Track query start time."""
+    conn.info.setdefault("query_start_time", []).append(time.time())
+
+
+@event.listens_for(engine.sync_engine, "after_cursor_execute")
+def receive_after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """Track query execution time and log slow queries."""
+    import time
+
+    total_time = time.time() - conn.info["query_start_time"].pop()
+
+    # Log slow queries (>1 second)
+    if total_time > 1.0:
+        logger.warning(
+            f"Slow query detected ({total_time:.2f}s): {statement[:200]}...",
+            duration_ms=total_time * 1000,
+            query=statement[:500],
+        )
+
+    # Track metrics
+    if METRICS_AVAILABLE:
+        # Extract operation and table from statement
+        operation = statement.strip().split()[0].upper() if statement else "UNKNOWN"
+        table = "unknown"
+
+        # Try to extract table name (simple heuristic)
+        if "FROM" in statement.upper():
+            parts = statement.upper().split("FROM")[1].strip().split()
+            if parts:
+                table = parts[0].strip("(),;").lower()
+
+        db_queries_total.labels(operation=operation, table=table).inc()
+        db_query_duration_seconds.labels(operation=operation, table=table).observe(total_time)
 
 
 # Create async session factory
@@ -191,15 +257,18 @@ async def health_check() -> Dict[str, Any]:
         # Add connection pool stats for PostgreSQL
         if settings.is_postgresql:
             pool_obj = engine.pool
-            health_info.update(
-                {
-                    "pool_size": pool_obj.size(),
-                    "pool_checked_in": pool_obj.checkedin(),
-                    "pool_checked_out": pool_obj.checkedout(),
-                    "pool_overflow": pool_obj.overflow(),
-                    "pool_timeout": pool_obj.timeout(),
-                }
-            )
+            pool_stats = {
+                "pool_size": pool_obj.size(),
+                "pool_checked_in": pool_obj.checkedin(),
+                "pool_checked_out": pool_obj.checkedout(),
+                "pool_overflow": pool_obj.overflow(),
+                "pool_timeout": pool_obj.timeout(),
+            }
+            health_info.update(pool_stats)
+
+            # Update metrics if available
+            if METRICS_AVAILABLE:
+                collect_db_pool_metrics(pool_obj)
 
         logger.debug(f"Database health check passed: {health_info}")
         return health_info

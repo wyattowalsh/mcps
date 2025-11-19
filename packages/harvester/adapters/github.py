@@ -132,9 +132,7 @@ class GitHubHarvester(BaseHarvester):
         super().__init__(session)
         self.github_token = settings.github_token or os.getenv("GITHUB_TOKEN")
         if not self.github_token:
-            logger.warning(
-                "No GITHUB_TOKEN found. API rate limits will be restricted (60/hour)"
-            )
+            logger.warning("No GITHUB_TOKEN found. API rate limits will be restricted (60/hour)")
 
     def _parse_github_url(self, url: str) -> tuple[str, str]:
         """Extract owner and repository name from GitHub URL.
@@ -587,9 +585,7 @@ class GitHubHarvester(BaseHarvester):
         except Exception as e:
             logger.warning(f"Error parsing package.json: {str(e)}")
 
-    def _parse_pyproject_toml_dependencies(
-        self, server: Server, pyproject_toml_text: str
-    ) -> None:
+    def _parse_pyproject_toml_dependencies(self, server: Server, pyproject_toml_text: str) -> None:
         """Parse pyproject.toml and extract dependencies.
 
         This is a basic parser that extracts dependencies using regex patterns.
@@ -618,7 +614,10 @@ class GitHubHarvester(BaseHarvester):
                     in_dependencies_section = True
                     in_dev_dependencies_section = False
                     continue
-                elif "[tool.poetry.dev-dependencies]" in line or "[tool.poetry.group.dev.dependencies]" in line:
+                elif (
+                    "[tool.poetry.dev-dependencies]" in line
+                    or "[tool.poetry.group.dev.dependencies]" in line
+                ):
                     in_dependencies_section = False
                     in_dev_dependencies_section = True
                     continue

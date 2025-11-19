@@ -86,11 +86,232 @@ class Settings(BaseSettings):
         description="GitHub personal access token for API requests",
     )
 
-    # Application
+    # Redis Cache
+    redis_url: str | None = Field(
+        default=None,
+        description="Full Redis URL (overrides host/port settings)",
+    )
+    redis_host: str = Field(
+        default="localhost",
+        description="Redis host",
+    )
+    redis_port: int = Field(
+        default=6379,
+        description="Redis port",
+    )
+    redis_db: int = Field(
+        default=0,
+        description="Redis database number",
+    )
+    redis_password: str | None = Field(
+        default=None,
+        description="Redis password (if authentication enabled)",
+    )
+    redis_pool_size: int = Field(
+        default=10,
+        description="Redis connection pool size",
+    )
+    redis_socket_timeout: int = Field(
+        default=5,
+        description="Redis socket timeout in seconds",
+    )
+    cache_enabled: bool = Field(
+        default=True,
+        description="Enable Redis caching",
+    )
+    cache_ttl_default: int = Field(
+        default=300,
+        description="Default cache TTL in seconds",
+    )
+    cache_fail_silently: bool = Field(
+        default=True,
+        description="Continue operation if cache fails",
+    )
+
+    # Logging
     log_level: str = Field(
         default="INFO",
         description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
+    log_format: Literal["json", "text"] = Field(
+        default="text",
+        description="Log format (json for production, text for development)",
+    )
+    log_file: str | None = Field(
+        default=None,
+        description="Log file path (None for no file logging)",
+    )
+    log_rotation_size: int = Field(
+        default=100,
+        description="Log rotation size in MB",
+    )
+    log_retention: int = Field(
+        default=10,
+        description="Number of rotated log files to keep",
+    )
+
+    # Metrics & Monitoring
+    metrics_enabled: bool = Field(
+        default=True,
+        description="Enable Prometheus metrics collection",
+    )
+    metrics_port: int = Field(
+        default=9090,
+        description="Prometheus metrics port",
+    )
+
+    # Error Tracking (Sentry)
+    sentry_enabled: bool = Field(
+        default=False,
+        description="Enable Sentry error tracking",
+    )
+    sentry_dsn: str | None = Field(
+        default=None,
+        description="Sentry DSN for error tracking",
+    )
+    sentry_environment: str | None = Field(
+        default=None,
+        description="Sentry environment (defaults to environment setting)",
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.1,
+        description="Sentry transaction traces sample rate (0.0-1.0)",
+    )
+    sentry_profiles_sample_rate: float = Field(
+        default=0.1,
+        description="Sentry profiling sample rate (0.0-1.0)",
+    )
+
+    # Rate Limiting
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable API rate limiting",
+    )
+    rate_limit_requests_per_minute: int = Field(
+        default=60,
+        description="Default rate limit (requests per minute)",
+    )
+    rate_limit_storage_url: str | None = Field(
+        default=None,
+        description="Redis URL for rate limit storage (uses redis_url if not set)",
+    )
+
+    # API Configuration
+    api_host: str = Field(
+        default="0.0.0.0",
+        description="API host to bind to",
+    )
+    api_port: int = Field(
+        default=8000,
+        description="API port",
+    )
+    api_workers: int = Field(
+        default=4,
+        description="Number of API workers (uvicorn)",
+    )
+    api_reload: bool = Field(
+        default=False,
+        description="Enable auto-reload (development only)",
+    )
+
+    # CORS Configuration
+    cors_enabled: bool = Field(
+        default=True,
+        description="Enable CORS middleware",
+    )
+    cors_origins: list[str] = Field(
+        default=["*"],
+        description="Allowed CORS origins",
+    )
+    cors_allow_credentials: bool = Field(
+        default=True,
+        description="Allow CORS credentials",
+    )
+
+    # Security
+    secret_key: str = Field(
+        default="changeme-in-production-use-openssl-rand-hex-32",
+        description="Secret key for JWT signing and encryption",
+    )
+    security_headers_enabled: bool = Field(
+        default=True,
+        description="Enable security headers (CSP, HSTS, etc.)",
+    )
+    hsts_enabled: bool = Field(
+        default=True,
+        description="Enable HSTS header (HTTPS only)",
+    )
+
+    # Compression
+    compression_enabled: bool = Field(
+        default=True,
+        description="Enable gzip compression",
+    )
+    compression_minimum_size: int = Field(
+        default=500,
+        description="Minimum response size in bytes to compress",
+    )
+    compression_level: int = Field(
+        default=6,
+        description="Gzip compression level (1-9)",
+    )
+
+    # Feature Flags
+    feature_social_media: bool = Field(
+        default=True,
+        description="Enable social media features",
+    )
+    feature_embeddings: bool = Field(
+        default=False,
+        description="Enable semantic embeddings (requires OpenAI)",
+    )
+    feature_background_tasks: bool = Field(
+        default=True,
+        description="Enable background task scheduler",
+    )
+
+    # OpenAI (for embeddings)
+    openai_api_key: str | None = Field(
+        default=None,
+        description="OpenAI API key for embeddings",
+    )
+    openai_model: str = Field(
+        default="gpt-4-turbo",
+        description="OpenAI model for text generation",
+    )
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI model for embeddings",
+    )
+
+    # Social Media API Keys
+    reddit_client_id: str | None = Field(default=None, description="Reddit API client ID")
+    reddit_client_secret: str | None = Field(default=None, description="Reddit API client secret")
+    reddit_user_agent: str = Field(
+        default="MCPS:v1.0.0",
+        description="Reddit API user agent",
+    )
+
+    twitter_bearer_token: str | None = Field(default=None, description="Twitter API bearer token")
+    twitter_api_key: str | None = Field(default=None, description="Twitter API key")
+    twitter_api_secret: str | None = Field(default=None, description="Twitter API secret")
+
+    youtube_api_key: str | None = Field(default=None, description="YouTube Data API key")
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def redis_url_computed(self) -> str:
+        """Get Redis URL based on configuration.
+
+        Returns:
+            Redis connection URL
+        """
+        if self.redis_url:
+            return self.redis_url
+
+        # Build URL from components
+        auth = f":{self.redis_password}@" if self.redis_password else ""
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @computed_field  # type: ignore[misc]
     @property

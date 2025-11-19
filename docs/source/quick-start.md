@@ -7,6 +7,10 @@ description: Get started with MCPS by walking through common tasks
 
 This guide will help you get started with MCPS by walking through common tasks.
 
+```{tip}
+For PostgreSQL-specific quick start, see [Quick Start PostgreSQL](quick-start-postgresql.md)
+```
+
 ## Your First Harvest
 
 Let's start by harvesting an MCP server from GitHub.
@@ -160,13 +164,13 @@ with open('data/exports/tools.jsonl', 'r') as f:
 
 ## Working with the Database
 
-### Query the SQLite Database
+### Query the Database
 
-You can query the database directly using any SQLite client:
+#### Using PostgreSQL (Recommended)
 
 ```bash
-# Using sqlite3 CLI
-sqlite3 data/mcps.db
+# Using psql CLI
+psql "postgresql://mcps:mcps_password@localhost:5432/mcps"
 ```
 
 ```sql
@@ -181,6 +185,15 @@ WHERE s.name = 'servers';
 
 -- Count servers by host type
 SELECT host_type, COUNT(*) as count FROM server GROUP BY host_type;
+```
+
+#### Using SQLite (Development)
+
+If using SQLite instead:
+
+```bash
+# Using sqlite3 CLI
+sqlite3 data/mcps.db
 ```
 
 ### Using Python with SQLModel
@@ -347,6 +360,27 @@ make test
 
 # Start development servers (API + Web)
 make dev
+```
+
+### Docker Compose Commands
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check service health
+curl http://localhost:8000/health/db
+curl http://localhost:8000/health/cache
+
+# Stop services
+docker-compose down
+
+# Reset everything
+docker-compose down -v
+docker-compose up -d
 ```
 
 ## Next Steps

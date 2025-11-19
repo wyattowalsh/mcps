@@ -136,12 +136,12 @@ class DockerHarvester(BaseHarvester):
         if not image:
             raise HarvesterError(f"Invalid Docker image reference: {url}")
 
-        logger.debug(f"Parsed Docker image: registry={registry}, org={org}, image={image}, tag={tag}")
+        logger.debug(
+            f"Parsed Docker image: registry={registry}, org={org}, image={image}, tag={tag}"
+        )
         return registry, org, image, tag
 
-    async def _get_registry_token(
-        self, registry: str, repository: str
-    ) -> Optional[str]:
+    async def _get_registry_token(self, registry: str, repository: str) -> Optional[str]:
         """Obtain authentication token for Docker registry.
 
         Docker Registry V2 requires Bearer token authentication. The flow is:
@@ -177,9 +177,7 @@ class DockerHarvester(BaseHarvester):
 
             # If not 401, unexpected
             if response.status_code != 401:
-                raise HarvesterError(
-                    f"Unexpected response from registry: {response.status_code}"
-                )
+                raise HarvesterError(f"Unexpected response from registry: {response.status_code}")
 
             # Parse WWW-Authenticate header
             auth_header = response.headers.get("WWW-Authenticate", "")
@@ -269,9 +267,7 @@ class DockerHarvester(BaseHarvester):
             # Validate manifest schema version
             schema_version = manifest.get("schemaVersion")
             if schema_version != 2:
-                raise HarvesterError(
-                    f"Unsupported manifest schema version: {schema_version}"
-                )
+                raise HarvesterError(f"Unsupported manifest schema version: {schema_version}")
 
             # Extract config digest
             config_info = manifest.get("config", {})
@@ -304,16 +300,12 @@ class DockerHarvester(BaseHarvester):
 
         except HTTPClientError as e:
             if hasattr(e, "response") and e.response.status_code == 404:
-                raise HarvesterError(
-                    f"Docker image not found: {repository}:{tag}"
-                ) from e
+                raise HarvesterError(f"Docker image not found: {repository}:{tag}") from e
             raise HarvesterError(
                 f"Failed to fetch Docker image {repository}:{tag}: {str(e)}"
             ) from e
         except Exception as e:
-            raise HarvesterError(
-                f"Unexpected error fetching Docker image: {str(e)}"
-            ) from e
+            raise HarvesterError(f"Unexpected error fetching Docker image: {str(e)}") from e
 
     async def parse(self, data: Dict[str, Any]) -> Server:
         """Parse Docker image config into Server model.
@@ -361,13 +353,11 @@ class DockerHarvester(BaseHarvester):
             labels = config_data.get("Labels", {}) or container_config.get("Labels", {}) or {}
 
             # Extract metadata from OCI labels
-            description = (
-                labels.get("org.opencontainers.image.description")
-                or labels.get("description")
+            description = labels.get("org.opencontainers.image.description") or labels.get(
+                "description"
             )
-            source_url = (
-                labels.get("org.opencontainers.image.source")
-                or labels.get("org.opencontainers.image.url")
+            source_url = labels.get("org.opencontainers.image.source") or labels.get(
+                "org.opencontainers.image.url"
             )
             version = labels.get("org.opencontainers.image.version")
             license_name = labels.get("org.opencontainers.image.licenses")
@@ -379,8 +369,7 @@ class DockerHarvester(BaseHarvester):
 
             if not is_mcp_server:
                 logger.warning(
-                    f"No MCP indicators found in {repository}:{tag}. "
-                    "This may not be an MCP server."
+                    f"No MCP indicators found in {repository}:{tag}. This may not be an MCP server."
                 )
 
             # Construct primary URL

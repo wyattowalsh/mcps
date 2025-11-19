@@ -1,11 +1,14 @@
 """FastAPI application for MCPS API.
 
-This module provides a RESTful API for the MCPS system with:
+This module provides a production-ready RESTful API for the MCPS system with:
 - CRUD endpoints for all entities
 - Admin endpoints for maintenance operations
-- Full-text search
+- Full-text search with caching
 - Authentication and rate limiting
-- CORS middleware
+- Comprehensive middleware (logging, metrics, security headers)
+- Health checks and metrics endpoints
+- Error handling and monitoring
+- Redis caching layer
 """
 
 import secrets
@@ -17,10 +20,13 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
+    Response,
     Security,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.security import APIKeyHeader
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -30,9 +36,23 @@ from slowapi.util import get_remote_address
 from sqlmodel import and_, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from packages.harvester.cache import cached, get_cache, invalidate_cache
 from packages.harvester.core.models import HostType, RiskLevel
 from packages.harvester.core.updater import ServerUpdater, UpdateError, ValidationError
 from packages.harvester.database import async_session_maker, close_db, health_check, init_db
+from packages.harvester.exceptions import APIError, MCPSException
+from packages.harvester.logging import RequestContext, configure_logging, configure_sentry
+from packages.harvester.metrics import get_metrics
+from packages.harvester.middleware import (
+    ErrorHandlerMiddleware,
+    HealthCheckBypassMiddleware,
+    LoggingMiddleware,
+    MetricsMiddleware,
+    RateLimitHeadersMiddleware,
+    RequestIDMiddleware,
+    SecurityHeadersMiddleware,
+    create_compression_middleware,
+)
 from packages.harvester.models.models import (
     Dependency,
     Prompt,
@@ -50,29 +70,72 @@ from packages.harvester.models.social import (
     Video,
     VideoPlatform,
 )
+from packages.harvester.settings import settings
+
+# Initialize logging and error tracking
+configure_logging()
+configure_sentry()
 
 # Initialize FastAPI app
 app = FastAPI(
     title="MCPS API",
-    description="Model Context Protocol Server (MCPS) API for querying and managing MCP ecosystem data",
+    description="Model Context Protocol Server (MCPS) API - Production-ready API for querying and managing MCP ecosystem data",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.environment != "production" else None,
+    redoc_url="/redoc" if settings.environment != "production" else None,
+    openapi_url="/openapi.json" if settings.environment != "production" else None,
 )
 
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.rate_limit_storage_url or settings.redis_url_computed,
+    enabled=settings.rate_limit_enabled,
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Add middleware (order matters - first added is outermost)
+# 1. Health check bypass (to skip logging/metrics for health checks)
+app.add_middleware(HealthCheckBypassMiddleware)
+
+# 2. Error handler (catches all exceptions)
+app.add_middleware(ErrorHandlerMiddleware)
+
+# 3. Security headers
+if settings.security_headers_enabled:
+    app.add_middleware(SecurityHeadersMiddleware, hsts_enabled=settings.hsts_enabled)
+
+# 4. Compression
+if settings.compression_enabled:
+    CompressionMiddleware = create_compression_middleware(
+        minimum_size=settings.compression_minimum_size,
+        compresslevel=settings.compression_level,
+    )
+    app.add_middleware(CompressionMiddleware)
+
+# 5. Metrics collection
+if settings.metrics_enabled:
+    app.add_middleware(MetricsMiddleware)
+
+# 6. Request/response logging
+app.add_middleware(LoggingMiddleware)
+
+# 7. Rate limit headers
+app.add_middleware(RateLimitHeadersMiddleware)
+
+# 8. Request ID tracking
+app.add_middleware(RequestIDMiddleware)
+
+# 9. CORS (innermost, processes after all others)
+if settings.cors_enabled:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # API Key authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -315,17 +378,50 @@ async def verify_admin(role: str = Depends(verify_api_key)) -> str:
 
 @app.on_event("startup")
 async def startup():
-    """Initialize database on startup."""
+    """Initialize application on startup."""
     logger.info("Starting MCPS API...")
+
+    # Initialize database
     await init_db()
-    logger.success("MCPS API started successfully")
+    logger.info("Database initialized")
+
+    # Initialize Redis cache if enabled
+    if settings.cache_enabled:
+        try:
+            cache = await get_cache()
+            logger.info("Redis cache initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Redis cache: {e}")
+            if not settings.cache_fail_silently:
+                raise
+
+    # Log startup information
+    logger.success(
+        f"MCPS API started successfully - "
+        f"Environment: {settings.environment}, "
+        f"Metrics: {settings.metrics_enabled}, "
+        f"Cache: {settings.cache_enabled}"
+    )
 
 
 @app.on_event("shutdown")
 async def shutdown():
     """Cleanup on shutdown."""
     logger.info("Shutting down MCPS API...")
+
+    # Close database connections
     await close_db()
+    logger.info("Database connections closed")
+
+    # Close Redis cache if enabled
+    if settings.cache_enabled:
+        try:
+            cache = await get_cache()
+            await cache.disconnect()
+            logger.info("Redis cache disconnected")
+        except Exception as e:
+            logger.warning(f"Error disconnecting cache: {e}")
+
     logger.success("MCPS API shutdown complete")
 
 
@@ -335,8 +431,77 @@ async def shutdown():
 @app.get("/health", tags=["Health"])
 @limiter.limit("100/minute")
 async def health_check_api():
-    """Basic health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    """Comprehensive health check endpoint.
+
+    Checks all system components and returns overall health status.
+
+    Returns:
+        Comprehensive health information
+    """
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "environment": settings.environment,
+        "version": "1.0.0",
+        "components": {},
+    }
+
+    # Check database
+    try:
+        db_health = await health_check()
+        health_status["components"]["database"] = {
+            "status": "healthy" if db_health.get("healthy") else "unhealthy",
+            "details": db_health,
+        }
+        if not db_health.get("healthy"):
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["components"]["database"] = {
+            "status": "unhealthy",
+            "error": str(e),
+        }
+        health_status["status"] = "unhealthy"
+
+    # Check cache
+    if settings.cache_enabled:
+        try:
+            cache = await get_cache()
+            cache_health = await cache.health_check()
+            health_status["components"]["cache"] = {
+                "status": "healthy" if cache_health.get("healthy") else "unhealthy",
+                "details": cache_health,
+            }
+            if not cache_health.get("healthy") and not settings.cache_fail_silently:
+                health_status["status"] = "degraded"
+        except Exception as e:
+            health_status["components"]["cache"] = {
+                "status": "unhealthy",
+                "error": str(e),
+            }
+            if not settings.cache_fail_silently:
+                health_status["status"] = "degraded"
+    else:
+        health_status["components"]["cache"] = {"status": "disabled"}
+
+    return health_status
+
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["Monitoring"])
+async def metrics_endpoint():
+    """Prometheus metrics endpoint.
+
+    Returns metrics in Prometheus text format for scraping.
+
+    Returns:
+        Prometheus metrics
+    """
+    if not settings.metrics_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metrics collection is disabled",
+        )
+
+    return get_metrics()
 
 
 @app.get("/health/db", tags=["Health"])
@@ -377,6 +542,105 @@ async def health_check_database():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database health check failed: {str(e)}",
         )
+
+
+@app.get("/health/cache", tags=["Health"])
+@limiter.limit("100/minute")
+async def health_check_cache():
+    """Redis cache health check endpoint.
+
+    Returns:
+        Cache health information including:
+        - Connection status
+        - Latency
+        - Memory usage
+        - Connected clients
+
+    Raises:
+        HTTPException: If cache is unhealthy
+    """
+    if not settings.cache_enabled:
+        return {
+            "status": "disabled",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    try:
+        cache = await get_cache()
+        health_info = await cache.health_check()
+
+        if not health_info.get("healthy"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Cache unhealthy: {health_info.get('error', 'Unknown error')}",
+            )
+
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "cache": health_info,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cache health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Cache health check failed: {str(e)}",
+        )
+
+
+@app.get("/readiness", tags=["Health"])
+async def readiness():
+    """Kubernetes readiness probe.
+
+    Checks if the application is ready to serve traffic.
+
+    Returns:
+        Readiness status
+    """
+    try:
+        # Check database
+        db_health = await health_check()
+        if not db_health.get("healthy"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database not ready",
+            )
+
+        # Check cache if enabled
+        if settings.cache_enabled:
+            cache = await get_cache()
+            cache_health = await cache.health_check()
+            if not cache_health.get("healthy"):
+                logger.warning("Cache not ready, but continuing (fail silently)")
+
+        return {
+            "status": "ready",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Application not ready: {str(e)}",
+        )
+
+
+@app.get("/liveness", tags=["Health"])
+async def liveness():
+    """Kubernetes liveness probe.
+
+    Simple check to see if the application is alive.
+
+    Returns:
+        Liveness status
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 
 # --- Server Endpoints ---
@@ -953,7 +1217,9 @@ async def list_videos(
     platform: Optional[str] = Query(None, description="Filter by platform (youtube, vimeo)"),
     category: Optional[str] = Query(None, description="Filter by category"),
     min_views: Optional[int] = Query(None, description="Minimum view count"),
-    min_educational_value: Optional[int] = Query(None, description="Minimum educational value score"),
+    min_educational_value: Optional[int] = Query(
+        None, description="Minimum educational value score"
+    ),
     server_id: Optional[int] = Query(None, description="Filter by mentioned server"),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1115,7 +1381,9 @@ async def get_article(
 @limiter.limit("60/minute")
 async def get_server_social_content(
     server_id: int,
-    content_type: Optional[str] = Query(None, description="Filter by type (posts, videos, articles)"),
+    content_type: Optional[str] = Query(
+        None, description="Filter by type (posts, videos, articles)"
+    ),
     session: AsyncSession = Depends(get_session),
 ):
     """Get all social media content mentioning a specific server.
@@ -1192,11 +1460,7 @@ async def get_trending_content(
     # Get trending posts
     posts_statement = (
         select(SocialPost)
-        .where(
-            and_(
-                SocialPost.platform_created_at >= cutoff_date, SocialPost.score >= min_score
-            )
-        )
+        .where(and_(SocialPost.platform_created_at >= cutoff_date, SocialPost.score >= min_score))
         .order_by(SocialPost.score.desc())
         .limit(20)
     )

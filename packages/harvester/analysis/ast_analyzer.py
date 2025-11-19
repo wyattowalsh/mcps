@@ -55,7 +55,12 @@ class PythonASTAnalyzer(ast.NodeVisitor):
                 module_name = node.func.value.id
                 attr_name = node.func.attr
 
-                if module_name == "subprocess" and attr_name in {"run", "Popen", "call", "check_output"}:
+                if module_name == "subprocess" and attr_name in {
+                    "run",
+                    "Popen",
+                    "call",
+                    "check_output",
+                }:
                     pattern = f"Subprocess execution: subprocess.{attr_name}()"
                     self.dangerous_patterns.append(pattern)
                     logger.debug(f"Detected: {pattern}")
@@ -158,7 +163,9 @@ class TypeScriptAnalyzer:
 
         # Compile regex patterns for common dangerous operations
         self.patterns = {
-            "child_process": re.compile(r"require\(['\"]child_process['\"]\)|import.*from\s+['\"]child_process['\"]"),
+            "child_process": re.compile(
+                r"require\(['\"]child_process['\"]\)|import.*from\s+['\"]child_process['\"]"
+            ),
             "exec": re.compile(r"\bexec\s*\("),
             "spawn": re.compile(r"\bspawn\s*\("),
             "eval": re.compile(r"\beval\s*\("),
@@ -187,25 +194,35 @@ class TypeScriptAnalyzer:
                     self.dangerous_patterns.append("Child process import detected")
                     logger.debug("Detected: child_process module")
                 elif pattern_name == "exec":
-                    self.dangerous_patterns.append(f"Process execution: exec() ({len(matches)} occurrences)")
+                    self.dangerous_patterns.append(
+                        f"Process execution: exec() ({len(matches)} occurrences)"
+                    )
                     logger.debug(f"Detected: exec() - {len(matches)} times")
                 elif pattern_name == "spawn":
-                    self.dangerous_patterns.append(f"Process spawning: spawn() ({len(matches)} occurrences)")
+                    self.dangerous_patterns.append(
+                        f"Process spawning: spawn() ({len(matches)} occurrences)"
+                    )
                     logger.debug(f"Detected: spawn() - {len(matches)} times")
                 elif pattern_name == "eval":
-                    self.dangerous_patterns.append(f"Code evaluation: eval() ({len(matches)} occurrences)")
+                    self.dangerous_patterns.append(
+                        f"Code evaluation: eval() ({len(matches)} occurrences)"
+                    )
                     logger.debug(f"Detected: eval() - {len(matches)} times")
                 elif pattern_name == "bun_ffi":
                     self.dangerous_patterns.append("FFI (Foreign Function Interface) detected")
                     logger.debug("Detected: bun:ffi module")
                 elif pattern_name == "fs_write":
-                    self.dangerous_patterns.append(f"Filesystem write operations ({len(matches)} occurrences)")
+                    self.dangerous_patterns.append(
+                        f"Filesystem write operations ({len(matches)} occurrences)"
+                    )
                     logger.debug(f"Detected: filesystem write - {len(matches)} times")
                 elif pattern_name in {"net", "http"}:
                     self.dangerous_patterns.append(f"Network module: {pattern_name}")
                     logger.debug(f"Detected: {pattern_name} module")
                 elif pattern_name == "fetch":
-                    self.dangerous_patterns.append(f"Network requests: fetch() ({len(matches)} occurrences)")
+                    self.dangerous_patterns.append(
+                        f"Network requests: fetch() ({len(matches)} occurrences)"
+                    )
                     logger.debug(f"Detected: fetch() - {len(matches)} times")
 
         return self.dangerous_patterns
@@ -251,17 +268,15 @@ def calculate_risk_score(patterns: List[str]) -> RiskLevel:
         for keyword in ["subprocess", "exec", "spawn", "popen", "child_process", "os command"]
     )
     has_network = any(
-        keyword in pattern_text
-        for keyword in ["network", "http", "fetch", "socket", "requests"]
+        keyword in pattern_text for keyword in ["network", "http", "fetch", "socket", "requests"]
     )
-    has_filesystem = any(
-        keyword in pattern_text
-        for keyword in ["filesystem", "write", "shutil"]
-    )
+    has_filesystem = any(keyword in pattern_text for keyword in ["filesystem", "write", "shutil"])
 
     # HIGH: Multiple dangerous capabilities combined
     if has_subprocess and (has_network or has_filesystem):
-        logger.info(f"HIGH risk: Multiple dangerous capabilities detected ({len(patterns)} patterns)")
+        logger.info(
+            f"HIGH risk: Multiple dangerous capabilities detected ({len(patterns)} patterns)"
+        )
         return RiskLevel.HIGH
 
     # HIGH: Subprocess execution alone is high risk
@@ -271,11 +286,15 @@ def calculate_risk_score(patterns: List[str]) -> RiskLevel:
 
     # MODERATE: Network or filesystem operations
     if has_network or has_filesystem:
-        logger.info(f"MODERATE risk: Network/filesystem operations detected ({len(patterns)} patterns)")
+        logger.info(
+            f"MODERATE risk: Network/filesystem operations detected ({len(patterns)} patterns)"
+        )
         return RiskLevel.MODERATE
 
     # Default to MODERATE if we detected something but it doesn't fit above categories
-    logger.info(f"MODERATE risk: Unclassified dangerous patterns detected ({len(patterns)} patterns)")
+    logger.info(
+        f"MODERATE risk: Unclassified dangerous patterns detected ({len(patterns)} patterns)"
+    )
     return RiskLevel.MODERATE
 
 

@@ -4,8 +4,8 @@
 
 MCPS (Model Context Protocol System) is the definitive intelligence hub for the MCP ecosystem. It aggregates, indexes, analyzes, and visualizes Model Context Protocol servers from multiple sources including code repositories (GitHub, NPM, PyPI, Docker, HTTP endpoints) and social media platforms (Reddit, Twitter, YouTube).
 
-**Version:** 3.1.0 (Phase 11: Social Media Integration)
-**Stack:** Python 3.12+ (Backend), Next.js 15 (Frontend), SQLite with WAL mode
+**Version:** 3.2.0 (Production-Ready with PostgreSQL + Redis)
+**Stack:** Python 3.12+ (Backend), Next.js 15 (Frontend), PostgreSQL + Redis
 **Architecture:** Monorepo with clear separation between harvesting logic and presentation
 **Scope:** Comprehensive MCP ecosystem database covering code, community discussions, tutorials, and social engagement
 
@@ -76,23 +76,31 @@ mcps/
 ## Technology Stack
 
 ### Backend (Python 3.12+)
-- **Database:** SQLite with WAL mode, sqlite-vec for vector search
-- **ORM:** SQLModel (Pydantic v2 + SQLAlchemy 2.0)
-- **API:** FastAPI with async SQLAlchemy sessions
-- **Auth:** API key-based with SlowAPI rate limiting
+- **Database:** PostgreSQL 15+ with asyncpg driver (production), SQLite for dev/testing
+- **Cache:** Redis 7+ for caching layer with graceful degradation
+- **ORM:** SQLModel (Pydantic v2 + SQLAlchemy 2.0) with async sessions
+- **API:** FastAPI with 9-layer middleware stack (logging, metrics, security, compression)
+- **Auth:** API key-based with SlowAPI rate limiting (Redis-backed)
 - **Scheduler:** APScheduler (AsyncIO backend) for background tasks
 - **HTTP:** httpx with tenacity retry logic
-- **Logging:** loguru for structured logging
+- **Logging:** loguru with structured JSON logging, request ID tracking, Sentry integration
+- **Metrics:** Prometheus metrics for monitoring (requests, DB queries, cache hits, etc.)
 - **CLI:** Typer for command-line interface
-- **Testing:** pytest with async support
+- **Testing:** pytest with async support, pytest-cov for coverage
 
 ### Frontend (TypeScript)
-- **Framework:** Next.js 15 (App Router, React 19 RC)
-- **Styling:** Tailwind CSS 4 (Oxide engine)
-- **Database Access:** better-sqlite3 (Server Components)
+- **Framework:** Next.js 15 (App Router, Server Actions, Streaming)
+- **React:** React 19 RC (useOptimistic, useFormStatus, useActionState hooks)
+- **Styling:** Tailwind CSS 4 (Oxide engine) with dark mode
+- **Database Access:** pg (node-postgres) for PostgreSQL (Server Components)
+- **Data Fetching:** @tanstack/react-query for client-side caching
+- **State Management:** Zustand for global state
 - **Visualization:** D3.js for force graphs, Visx for charts
 - **Icons:** lucide-react
+- **UI Components:** Shadcn-style component library (components/ui/)
+- **Validation:** Zod for schema validation
 - **Type Safety:** Full TypeScript with strict mode
+- **Testing:** Vitest (unit), Playwright (E2E), React Testing Library
 
 ### Documentation
 - **Generator:** Sphinx with shibuya theme
@@ -136,16 +144,60 @@ Based on AST analysis detecting:
 See: `packages/harvester/analysis/ast_analyzer.py::calculate_risk_score()`
 
 ### 5. Server Components (Next.js)
-Dashboard uses Server Components to query SQLite directly without API serialization overhead.
-Database access via better-sqlite3 in `apps/web/src/lib/db.ts`.
+Dashboard uses Server Components to query PostgreSQL directly without API serialization overhead.
+Database access via node-postgres (pg) in `apps/web/src/lib/db.ts`.
+
+### 6. Middleware Stack (FastAPI)
+9-layer middleware stack with specific ordering (first added is outermost):
+1. **HealthCheckBypassMiddleware** - Skip logging/metrics for health checks
+2. **ErrorHandlerMiddleware** - Catches all exceptions, returns proper JSON responses
+3. **SecurityHeadersMiddleware** - HSTS, CSP, X-Frame-Options, etc.
+4. **CompressionMiddleware** - Gzip compression for responses >1KB
+5. **MetricsMiddleware** - Prometheus metrics collection
+6. **LoggingMiddleware** - Request/response logging with request IDs
+7. **RateLimitHeadersMiddleware** - Add rate limit info to response headers
+8. **RequestIDMiddleware** - Generate/track unique request IDs
+9. **CORSMiddleware** - CORS handling (innermost)
+
+### 7. Caching Strategy (Redis)
+Three-tier caching with TTLs:
+- **Server list endpoints** - 300s TTL, invalidate on server write
+- **Server detail endpoints** - 600s TTL, invalidate on specific server update
+- **Search results** - 60s TTL, invalidate on any server write
+- **Statistics** - 900s TTL, invalidate on daily refresh
+- **Cache decorators** - `@cached(ttl=300)` and `@invalidate_cache(pattern="servers:*")`
+
+### 8. Monitoring & Observability
+Comprehensive monitoring stack:
+- **Structured Logging** - JSON logs with request IDs, correlation IDs, contextual metadata
+- **Prometheus Metrics** - HTTP requests, DB queries, cache hits, background tasks
+- **Sentry Integration** - Error tracking and performance monitoring
+- **Health Checks** - `/health` endpoint with DB and cache status
+- **Metrics Endpoint** - `/metrics` for Prometheus scraping
+- **Slow Query Detection** - Automatic logging of queries >1s
+- **Connection Pool Monitoring** - Track pool size, overflow, timeouts
 
 ## Important Constraints and Rules
 
-### Database Operations
+### Database Operations (PostgreSQL)
 1. **ALWAYS use Alembic for schema changes** - Never use `SQLModel.metadata.create_all()` in production
-2. **WAL mode is required** - Enables concurrent reads during writes
-3. **Foreign keys enabled** - `PRAGMA foreign_keys = ON`
-4. **JSON columns for arrays** - SQLite doesn't support native arrays, use `sa_column=Column(JSON)`
+2. **Use async sessions exclusively** - `AsyncSession` with asyncpg driver
+3. **Connection pooling configured** - Pool size: 20, max overflow: 10, pre-ping enabled
+4. **Use JSONB for JSON data** - PostgreSQL native JSON type with indexing support
+5. **Enable query logging in dev** - Set `DB_ECHO=true` to see SQL queries
+6. **Monitor slow queries** - Queries >1s are automatically logged
+7. **Use indexes wisely** - Add indexes for frequently queried columns
+8. **Transactions for writes** - Always wrap writes in transactions
+9. **Legacy SQLite support** - Set `USE_SQLITE=true` for dev/testing only
+
+### Cache Operations (Redis)
+1. **Cache enabled by default** - Graceful degradation if Redis unavailable
+2. **Use cache decorators** - `@cached` and `@invalidate_cache` for easy integration
+3. **Set appropriate TTLs** - Default 300s, adjust per endpoint
+4. **Cache invalidation** - Invalidate on writes (POST/PUT/DELETE)
+5. **Connection pooling** - Pool size: 10 connections
+6. **Fail silently option** - Continue operation if cache fails (default: True)
+7. **Monitor cache metrics** - Track hit rate, latency, errors
 
 ### Static Analysis
 1. **NEVER import downloaded modules** - Always use AST parsing (ast.parse for Python, regex for TypeScript)
@@ -194,15 +246,27 @@ cd docs && make html
 uv sync
 cd apps/web && pnpm install
 
+# Start infrastructure (Docker)
+make docker-up          # Start PostgreSQL + Redis
+make docker-logs       # View logs
+make docker-down       # Stop services
+
 # Run database migrations
-uv run alembic upgrade head
+make migrate           # Or: uv run alembic upgrade head
 
 # Run tests
-uv run pytest
+make test              # Or: uv run pytest
+make test-coverage     # With coverage report
 
 # Code quality checks
+make lint              # Run all linters
 uv run ruff check .
 uv run mypy packages/
+
+# Development servers
+make dev-api          # Start FastAPI on :8000
+make dev-web          # Start Next.js on :3000
+make dev              # Start both (requires tmux/screen)
 ```
 
 ## Sub-AGENTS.md References
@@ -235,23 +299,54 @@ For detailed guidance on specific areas, refer to:
 Required environment variables (see `.env.example`):
 
 ```bash
+# PostgreSQL Database
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/mcps
+# Or use individual components:
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=mcps
+POSTGRES_PASSWORD=mcps_password
+POSTGRES_DB=mcps
+
+# Redis Cache
+REDIS_URL=redis://localhost:6379/0
+# Or use individual components:
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+CACHE_ENABLED=true
+CACHE_TTL_DEFAULT=300
+
 # GitHub API access (for GraphQL queries)
 GITHUB_TOKEN=ghp_...
 
-# Social Media APIs (NEW in Phase 11)
+# Social Media APIs (Phase 11)
 REDDIT_CLIENT_ID=...           # Reddit API credentials
 REDDIT_CLIENT_SECRET=...
 TWITTER_BEARER_TOKEN=...       # Twitter/X API v2 credentials
 YOUTUBE_API_KEY=...            # YouTube Data API v3 key
 
-# Optional: Database path override
-DATABASE_URL=sqlite:///data/mcps.db
+# Logging & Monitoring
+LOG_LEVEL=INFO                 # DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_FORMAT=json                # json for production, text for development
+SENTRY_DSN=...                 # Optional: Sentry error tracking
+METRICS_ENABLED=true           # Enable Prometheus metrics
 
-# Optional: OpenAI API key (for embeddings)
+# Security
+SECURITY_HEADERS_ENABLED=true  # Enable security headers
+HSTS_ENABLED=true             # Enable HSTS header
+CORS_ENABLED=true             # Enable CORS
+CORS_ORIGINS=["http://localhost:3000"]
+
+# Performance
+COMPRESSION_ENABLED=true       # Enable gzip compression
+COMPRESSION_MINIMUM_SIZE=1024  # Minimum size to compress (bytes)
+
+# OpenAI (Optional for embeddings)
 OPENAI_API_KEY=sk-...
 
-# Optional: Log level
-LOG_LEVEL=INFO
+# Environment
+ENVIRONMENT=development        # development, production, test
 ```
 
 **Note:** Social media credentials are optional but required for `harvest-social` CLI command. See `.env.example` for all configuration options including subreddit lists, search queries, and quality thresholds.
@@ -346,6 +441,12 @@ uv run python -m packages.harvester.cli harvest-social --platform youtube
 6. **Skipping validation** - Let Pydantic handle validation, don't bypass it
 7. **Not handling retries** - Use tenacity decorators for network operations
 8. **Exposing raw errors to API** - Always return structured error responses
+9. **Using SQLite in production** - Always use PostgreSQL for production deployments
+10. **Disabling cache without fallback** - Ensure graceful degradation if Redis is down
+11. **Ignoring middleware order** - Middleware order matters! First added is outermost
+12. **Not setting cache TTLs** - Always specify appropriate TTLs for cached endpoints
+13. **Missing request IDs in logs** - Use RequestContext for distributed tracing
+14. **Not monitoring metrics** - Always check `/metrics` endpoint for system health
 
 ## Getting Help
 
@@ -359,10 +460,13 @@ uv run python -m packages.harvester.cli harvest-social --platform youtube
 
 - **Python:** 3.12+ required (uses modern async features)
 - **Node.js:** 18+ required (Next.js 15 dependency)
-- **SQLite:** 3.35+ required (for WAL mode and JSON support)
-- **Next.js:** 15.x (App Router)
+- **PostgreSQL:** 15+ required (production database)
+- **Redis:** 7+ required (caching layer)
+- **Next.js:** 15.x (App Router with Server Actions)
+- **React:** 19.0.0-rc.0 (Release Candidate)
 - **FastAPI:** 0.100+
 - **SQLModel:** 0.0.14+
+- **Tailwind CSS:** 4.x (Oxide engine)
 
 ---
 

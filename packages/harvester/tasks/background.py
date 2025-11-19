@@ -23,6 +23,19 @@ from packages.harvester.core.updater import ServerUpdater, UpdateError
 from packages.harvester.database import async_session_maker, init_db
 from packages.harvester.models.models import Server
 
+# Try to import metrics (optional)
+try:
+    from packages.harvester.metrics import (
+        background_task_duration_seconds,
+        background_tasks_running,
+        background_tasks_total,
+        scheduled_jobs_total,
+    )
+
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 
 class TaskProgress:
     """Track progress of background tasks."""
@@ -61,11 +74,11 @@ class TaskProgress:
             total = self.tasks[task_id]["total"]
             if total > 0:
                 percent = (progress / total) * 100
-                logger.debug(
-                    f"Task {task_id} progress: {progress}/{total} ({percent:.1f}%)"
-                )
+                logger.debug(f"Task {task_id} progress: {progress}/{total} ({percent:.1f}%)")
 
-    def complete_task(self, task_id: str, success: bool = True, error: Optional[str] = None) -> None:
+    def complete_task(
+        self, task_id: str, success: bool = True, error: Optional[str] = None
+    ) -> None:
         """Mark a task as completed.
 
         Args:
@@ -219,7 +232,14 @@ class BackgroundTaskManager:
         This task refreshes servers that haven't been indexed in the last 7 days.
         """
         task_id = f"auto_refresh_{datetime.utcnow().timestamp()}"
+        task_name = "auto_refresh_servers"
         logger.info("Starting auto-refresh task...")
+
+        # Track in-progress metric
+        if METRICS_AVAILABLE:
+            background_tasks_running.inc()
+
+        start_time = datetime.utcnow()
 
         try:
             async with async_session_maker() as session:
@@ -261,9 +281,24 @@ class BackgroundTaskManager:
                 )
                 self.progress.complete_task(task_id)
 
+                # Track success metrics
+                if METRICS_AVAILABLE:
+                    background_tasks_total.labels(task_name=task_name, status="success").inc()
+
         except Exception as e:
             logger.error(f"Auto-refresh task failed: {e}")
             self.progress.complete_task(task_id, success=False, error=str(e))
+
+            # Track failure metrics
+            if METRICS_AVAILABLE:
+                background_tasks_total.labels(task_name=task_name, status="failed").inc()
+
+        finally:
+            # Track duration and decrement running counter
+            if METRICS_AVAILABLE:
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                background_task_duration_seconds.labels(task_name=task_name).observe(duration)
+                background_tasks_running.dec()
 
     async def recalculate_health_scores(self) -> None:
         """Recalculate health scores for all servers.
@@ -271,7 +306,13 @@ class BackgroundTaskManager:
         This task recalculates health scores based on current metrics.
         """
         task_id = f"health_scores_{datetime.utcnow().timestamp()}"
+        task_name = "recalculate_health_scores"
         logger.info("Starting health score recalculation...")
+
+        if METRICS_AVAILABLE:
+            background_tasks_running.inc()
+
+        start_time = datetime.utcnow()
 
         try:
             async with async_session_maker() as session:
@@ -283,9 +324,21 @@ class BackgroundTaskManager:
                 logger.success(f"Recalculated health scores for {count} servers")
                 self.progress.complete_task(task_id)
 
+                if METRICS_AVAILABLE:
+                    background_tasks_total.labels(task_name=task_name, status="success").inc()
+
         except Exception as e:
             logger.error(f"Health score recalculation failed: {e}")
             self.progress.complete_task(task_id, success=False, error=str(e))
+
+            if METRICS_AVAILABLE:
+                background_tasks_total.labels(task_name=task_name, status="failed").inc()
+
+        finally:
+            if METRICS_AVAILABLE:
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                background_task_duration_seconds.labels(task_name=task_name).observe(duration)
+                background_tasks_running.dec()
 
     async def recalculate_risk_levels(self) -> None:
         """Recalculate risk levels for all servers.
@@ -392,9 +445,7 @@ class BackgroundTaskManager:
                     logger.warning(error_msg)
                     self.progress.complete_task(task_id, success=False, error=error_msg)
                 else:
-                    logger.success(
-                        f"Social media harvest completed: {total_items} items harvested"
-                    )
+                    logger.success(f"Social media harvest completed: {total_items} items harvested")
                     self.progress.complete_task(task_id)
 
         except Exception as e:
@@ -434,12 +485,19 @@ class BackgroundTaskManager:
         """
         jobs = []
         for job in self.scheduler.get_jobs():
-            jobs.append({
-                "id": job.id,
-                "name": job.name,
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-                "trigger": str(job.trigger),
-            })
+            jobs.append(
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                    "trigger": str(job.trigger),
+                }
+            )
+
+        # Update scheduled jobs count metric
+        if METRICS_AVAILABLE:
+            scheduled_jobs_total.set(len(jobs))
+
         return jobs
 
     def get_task_progress(self, task_id: Optional[str] = None) -> Dict:

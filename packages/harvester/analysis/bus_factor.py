@@ -11,7 +11,6 @@ from loguru import logger
 
 from packages.harvester.models.models import Contributor
 
-
 BusFactor = Literal["LOW", "MEDIUM", "HIGH"]
 
 

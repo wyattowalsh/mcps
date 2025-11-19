@@ -71,56 +71,60 @@ class ParquetExporter:
         data: List[Dict[str, Any]] = []
 
         for server in servers:
-            data.append({
-                "id": server.id,
-                "uuid": str(server.uuid),
-                "name": server.name,
-                "primary_url": server.primary_url,
-                "host_type": server.host_type.value,
-                "description": server.description,
-                "author_name": server.author_name,
-                "homepage": server.homepage,
-                "license": server.license,
-                # Metrics
-                "stars": server.stars,
-                "downloads": server.downloads,
-                "forks": server.forks,
-                "open_issues": server.open_issues,
-                # Analysis
-                "risk_level": server.risk_level.value,
-                "health_score": server.health_score,
-                "verified_source": server.verified_source,
-                # Timestamps
-                "created_at": server.created_at,
-                "updated_at": server.updated_at,
-                "last_indexed_at": server.last_indexed_at,
-            })
+            data.append(
+                {
+                    "id": server.id,
+                    "uuid": str(server.uuid),
+                    "name": server.name,
+                    "primary_url": server.primary_url,
+                    "host_type": server.host_type.value,
+                    "description": server.description,
+                    "author_name": server.author_name,
+                    "homepage": server.homepage,
+                    "license": server.license,
+                    # Metrics
+                    "stars": server.stars,
+                    "downloads": server.downloads,
+                    "forks": server.forks,
+                    "open_issues": server.open_issues,
+                    # Analysis
+                    "risk_level": server.risk_level.value,
+                    "health_score": server.health_score,
+                    "verified_source": server.verified_source,
+                    # Timestamps
+                    "created_at": server.created_at,
+                    "updated_at": server.updated_at,
+                    "last_indexed_at": server.last_indexed_at,
+                }
+            )
 
         # Define PyArrow schema with proper types
-        schema = pa.schema([
-            ("id", pa.int64()),
-            ("uuid", pa.string()),
-            ("name", pa.string()),
-            ("primary_url", pa.string()),
-            ("host_type", pa.string()),
-            ("description", pa.string()),
-            ("author_name", pa.string()),
-            ("homepage", pa.string()),
-            ("license", pa.string()),
-            # Metrics
-            ("stars", pa.int32()),
-            ("downloads", pa.int32()),
-            ("forks", pa.int32()),
-            ("open_issues", pa.int32()),
-            # Analysis
-            ("risk_level", pa.string()),
-            ("health_score", pa.int32()),
-            ("verified_source", pa.bool_()),
-            # Timestamps
-            ("created_at", pa.timestamp("ms")),
-            ("updated_at", pa.timestamp("ms")),
-            ("last_indexed_at", pa.timestamp("ms")),
-        ])
+        schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("uuid", pa.string()),
+                ("name", pa.string()),
+                ("primary_url", pa.string()),
+                ("host_type", pa.string()),
+                ("description", pa.string()),
+                ("author_name", pa.string()),
+                ("homepage", pa.string()),
+                ("license", pa.string()),
+                # Metrics
+                ("stars", pa.int32()),
+                ("downloads", pa.int32()),
+                ("forks", pa.int32()),
+                ("open_issues", pa.int32()),
+                # Analysis
+                ("risk_level", pa.string()),
+                ("health_score", pa.int32()),
+                ("verified_source", pa.bool_()),
+                # Timestamps
+                ("created_at", pa.timestamp("ms")),
+                ("updated_at", pa.timestamp("ms")),
+                ("last_indexed_at", pa.timestamp("ms")),
+            ]
+        )
 
         # Convert to PyArrow table
         table = pa.Table.from_pylist(data, schema=schema)
@@ -172,24 +176,28 @@ class ParquetExporter:
         data: List[Dict[str, Any]] = []
 
         for dep in dependencies:
-            data.append({
-                "server_id": dep.server_id,
-                "server_name": dep.server.name if dep.server else None,
-                "library_name": dep.library_name,
-                "version_constraint": dep.version_constraint,
-                "ecosystem": dep.ecosystem,
-                "type": dep.type.value,
-            })
+            data.append(
+                {
+                    "server_id": dep.server_id,
+                    "server_name": dep.server.name if dep.server else None,
+                    "library_name": dep.library_name,
+                    "version_constraint": dep.version_constraint,
+                    "ecosystem": dep.ecosystem,
+                    "type": dep.type.value,
+                }
+            )
 
         # Define PyArrow schema
-        schema = pa.schema([
-            ("server_id", pa.int64()),
-            ("server_name", pa.string()),
-            ("library_name", pa.string()),
-            ("version_constraint", pa.string()),
-            ("ecosystem", pa.string()),
-            ("type", pa.string()),
-        ])
+        schema = pa.schema(
+            [
+                ("server_id", pa.int64()),
+                ("server_name", pa.string()),
+                ("library_name", pa.string()),
+                ("version_constraint", pa.string()),
+                ("ecosystem", pa.string()),
+                ("type", pa.string()),
+            ]
+        )
 
         # Convert to PyArrow table
         table = pa.Table.from_pylist(data, schema=schema)
@@ -210,9 +218,7 @@ class JSONLExporter:
     """
 
     @staticmethod
-    async def export_tools_for_training(
-        output_path: Path, session: AsyncSession
-    ) -> None:
+    async def export_tools_for_training(output_path: Path, session: AsyncSession) -> None:
         """Export tools in training format for LLM fine-tuning.
 
         Generates tools.jsonl with conversational format suitable for fine-tuning:
@@ -262,8 +268,7 @@ class JSONLExporter:
                 # Validate JSON schema before writing
                 if not tool.input_schema or not isinstance(tool.input_schema, dict):
                     logger.warning(
-                        f"Skipping tool {tool.name} (id={tool.id}): "
-                        "Invalid or missing input_schema"
+                        f"Skipping tool {tool.name} (id={tool.id}): Invalid or missing input_schema"
                     )
                     skipped_count += 1
                     continue
@@ -275,17 +280,14 @@ class JSONLExporter:
                     json.loads(schema_str)
                 except (TypeError, json.JSONDecodeError) as e:
                     logger.warning(
-                        f"Skipping tool {tool.name} (id={tool.id}): "
-                        f"Schema validation failed: {e}"
+                        f"Skipping tool {tool.name} (id={tool.id}): Schema validation failed: {e}"
                     )
                     skipped_count += 1
                     continue
 
                 # Generate user prompt based on tool description
                 description = tool.description or tool.name
-                server_context = (
-                    f" from {tool.server.name}" if tool.server else ""
-                )
+                server_context = f" from {tool.server.name}" if tool.server else ""
                 user_content = (
                     f"Create a tool for {description}{server_context}. "
                     f"The tool should be named '{tool.name}'."
@@ -310,8 +312,7 @@ class JSONLExporter:
                 exported_count += 1
 
         logger.success(
-            f"Exported {exported_count} tools to {output_file} "
-            f"(skipped {skipped_count} invalid)"
+            f"Exported {exported_count} tools to {output_file} (skipped {skipped_count} invalid)"
         )
         logger.info(f"File size: {output_file.stat().st_size / 1024:.2f} KB")
 
@@ -398,11 +399,13 @@ class VectorExporter:
 
                 # Store mapping
                 tool_name = embedding.tool.name if embedding.tool else "unknown"
-                mappings.append({
-                    "index": idx,
-                    "tool_id": embedding.tool_id,
-                    "tool_name": tool_name,
-                })
+                mappings.append(
+                    {
+                        "index": idx,
+                        "tool_id": embedding.tool_id,
+                        "tool_name": tool_name,
+                    }
+                )
 
         # Write metadata file
         metadata = {
@@ -417,8 +420,7 @@ class VectorExporter:
             json.dump(metadata, f, indent=2)
 
         logger.success(
-            f"Exported {len(mappings)} vectors to {binary_file} "
-            f"with metadata in {metadata_file}"
+            f"Exported {len(mappings)} vectors to {binary_file} with metadata in {metadata_file}"
         )
         logger.info(f"Binary size: {binary_file.stat().st_size / 1024:.2f} KB")
         logger.info(f"Metadata size: {metadata_file.stat().st_size / 1024:.2f} KB")

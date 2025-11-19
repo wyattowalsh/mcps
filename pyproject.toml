@@ -57,6 +57,22 @@ dependencies = [
 
     # NLP & Sentiment Analysis
     "vaderSentiment>=3.3.2",  # Sentiment analysis
+
+    # Caching & Redis
+    "redis>=5.0.0",  # Redis client
+    "redis-om>=0.2.0",  # Redis object mapper
+
+    # Metrics & Monitoring
+    "prometheus-client>=0.19.0",  # Prometheus metrics
+
+    # Error Tracking
+    "sentry-sdk[fastapi]>=1.39.0",  # Sentry integration (optional)
+
+    # Rate Limiting
+    "slowapi>=0.1.9",  # Rate limiting for FastAPI
+
+    # Task Scheduling
+    "apscheduler>=3.10.0",  # Background task scheduling
 ]
 
 [dependency-groups]

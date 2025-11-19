@@ -221,27 +221,54 @@ flowchart LR
 
 ## Design Decisions
 
-### Why SQLite Instead of PostgreSQL?
+### PostgreSQL as Production Database
 
 ```{dropdown} Decision Rationale
 :open:
 
-**Decision:** Use SQLite as the primary database
+**Decision:** Use PostgreSQL 16+ for production deployments
 
 **Rationale:**
 
-- **Portability:** Single-file database, easy to backup/replicate
-- **Zero Configuration:** No server setup or management
-- **Local-First:** Zero network latency for analytics
-- **Git-Friendly:** Can commit to Git LFS for versioning
-- **Sufficient Scale:** Handles millions of records efficiently
-- **Vector Support:** sqlite-vec extension for semantic search
+- **Production-Ready:** Battle-tested, ACID-compliant RDBMS
+- **Scalability:** Handles millions of records with excellent performance
+- **Connection Pooling:** Built-in support for concurrent connections
+- **Vector Search:** pgvector extension for semantic similarity
+- **JSON Support:** JSONB for efficient JSON storage and indexing
+- **Replication:** Native streaming replication for high availability
+- **Extensions:** Rich ecosystem (pg_trgm, btree_gin, etc.)
 
-**Trade-offs:**
+**Migration Support:**
 
-- ❌ No built-in replication
-- ❌ Single-writer limitation (mitigated by WAL mode)
-- ✅ Perfect for read-heavy analytics workloads
+- ✅ SQLite still supported for development
+- ✅ Backward compatible with `USE_SQLITE=true`
+- ✅ Automatic database detection
+- ✅ Unified codebase for both databases
+```
+
+### Redis for Caching
+
+```{dropdown} Caching Strategy
+:open:
+
+**Decision:** Use Redis for high-performance caching
+
+**Benefits:**
+
+- **Performance:** Sub-millisecond response times
+- **Scalability:** Handles high throughput efficiently
+- **Data Structures:** Rich data types (strings, sets, hashes)
+- **TTL Support:** Automatic expiration of cached data
+- **Pub/Sub:** Real-time messaging capabilities
+- **Persistence:** Optional data persistence (AOF, RDB)
+
+**Use Cases:**
+
+- API response caching
+- Database query result caching
+- Rate limiting
+- Session storage
+- Temporary data storage
 ```
 
 ### Why Async/Await Throughout?
@@ -363,5 +390,8 @@ analyzer.visit(tree)
 ## See Also
 
 - [Data Dictionary](data-dictionary.md) - Database schema reference
+- [PostgreSQL Migration](guides/postgresql-migration.md) - PostgreSQL migration guide
+- [Caching Guide](guides/caching.md) - Redis caching documentation
+- [Monitoring Guide](guides/monitoring.md) - Observability and metrics
 - [Contributing](contributing.md) - Development guidelines
 - [API Documentation](api/index.md) - API reference

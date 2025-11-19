@@ -10,14 +10,14 @@ This package contains code analysis tools including:
 from packages.harvester.analysis.ast_analyzer import (
     PythonASTAnalyzer,
     TypeScriptAnalyzer,
-    calculate_risk_score,
     analyze_file,
+    calculate_risk_score,
 )
 from packages.harvester.analysis.bus_factor import (
+    BusFactor,
+    analyze_contributor_health,
     calculate_bus_factor,
     get_bus_factor_description,
-    analyze_contributor_health,
-    BusFactor,
 )
 from packages.harvester.analysis.embeddings import (
     EmbeddingService,

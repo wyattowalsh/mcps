@@ -152,9 +152,7 @@ class PyPIHarvester(BaseHarvester):
                 raise HarvesterError(f"Package not found on PyPI: {package_name}") from e
             raise HarvesterError(f"Failed to fetch PyPI data: {str(e)}") from e
         except Exception as e:
-            raise HarvesterError(
-                f"Unexpected error fetching PyPI data: {str(e)}"
-            ) from e
+            raise HarvesterError(f"Unexpected error fetching PyPI data: {str(e)}") from e
 
     async def parse(self, data: Dict[str, Any]) -> Server:
         """Parse PyPI data into Server model.
@@ -213,7 +211,9 @@ class PyPIHarvester(BaseHarvester):
                 name=name,
                 primary_url=f"pypi://{package_name}",
                 host_type=HostType.PYPI,
-                description=description[:500] if description else None,  # Truncate long descriptions
+                description=description[:500]
+                if description
+                else None,  # Truncate long descriptions
                 author_name=author,
                 homepage=homepage,
                 license=license_name,
@@ -397,9 +397,7 @@ class PyPIHarvester(BaseHarvester):
             logger.warning(f"Error extracting download count: {str(e)}")
             return 0
 
-    async def _extract_and_parse_package(
-        self, server: Server, urls: List[Dict[str, Any]]
-    ) -> None:
+    async def _extract_and_parse_package(self, server: Server, urls: List[Dict[str, Any]]) -> None:
         """Download and extract package to search for MCP configuration.
 
         This method:
@@ -435,9 +433,7 @@ class PyPIHarvester(BaseHarvester):
             return
 
         try:
-            logger.info(
-                f"Downloading {'wheel' if is_wheel else 'sdist'} for {server.name}"
-            )
+            logger.info(f"Downloading {'wheel' if is_wheel else 'sdist'} for {server.name}")
             artifact_bytes = await fetch_bytes(download_url)
 
             logger.debug(f"Downloaded {len(artifact_bytes)} bytes")
@@ -506,9 +502,7 @@ class PyPIHarvester(BaseHarvester):
         try:
             with tarfile.open(fileobj=io.BytesIO(sdist_bytes), mode="r:gz") as tf:
                 # Security check: zip bomb detection
-                total_size = sum(
-                    member.size for member in tf.getmembers() if member.isfile()
-                )
+                total_size = sum(member.size for member in tf.getmembers() if member.isfile())
                 if total_size > self.MAX_UNCOMPRESSED_SIZE:
                     logger.warning(
                         f"Tar bomb detected: uncompressed size {total_size} exceeds limit"
@@ -538,9 +532,7 @@ class PyPIHarvester(BaseHarvester):
         except Exception as e:
             logger.warning(f"Error extracting sdist: {str(e)}")
 
-    def _parse_mcp_json_from_zip(
-        self, server: Server, zf: zipfile.ZipFile, filepath: str
-    ) -> None:
+    def _parse_mcp_json_from_zip(self, server: Server, zf: zipfile.ZipFile, filepath: str) -> None:
         """Parse mcp.json from zip file.
 
         Args:
@@ -567,9 +559,7 @@ class PyPIHarvester(BaseHarvester):
         except Exception as e:
             logger.warning(f"Error parsing mcp.json: {str(e)}")
 
-    def _parse_mcp_json_from_tar(
-        self, server: Server, tf: tarfile.TarFile, filepath: str
-    ) -> None:
+    def _parse_mcp_json_from_tar(self, server: Server, tf: tarfile.TarFile, filepath: str) -> None:
         """Parse mcp.json from tar file.
 
         Args:
@@ -699,9 +689,7 @@ class PyPIHarvester(BaseHarvester):
         except Exception as e:
             logger.debug(f"Error parsing Python file {filepath}: {str(e)}")
 
-    def _extract_mcp_decorators(
-        self, server: Server, python_code: str, filepath: str
-    ) -> None:
+    def _extract_mcp_decorators(self, server: Server, python_code: str, filepath: str) -> None:
         """Extract tools from @mcp.tool decorators using AST parsing.
 
         Args:
@@ -739,9 +727,7 @@ class PyPIHarvester(BaseHarvester):
                             )
                             server.tools.append(tool)
 
-                            logger.debug(
-                                f"Found @mcp.tool decorator for {func_name} in {filepath}"
-                            )
+                            logger.debug(f"Found @mcp.tool decorator for {func_name} in {filepath}")
 
         except SyntaxError as e:
             logger.debug(f"Syntax error in {filepath}: {str(e)}")
@@ -874,9 +860,7 @@ class PyPIHarvester(BaseHarvester):
                 if release_files:
                     upload_time_str = release_files[0].get("upload_time_iso_8601")
                     if upload_time_str:
-                        upload_time = datetime.fromisoformat(
-                            upload_time_str.replace("Z", "+00:00")
-                        )
+                        upload_time = datetime.fromisoformat(upload_time_str.replace("Z", "+00:00"))
                         days_since = (datetime.now(upload_time.tzinfo) - upload_time).days
                         if days_since < 180:  # 6 months
                             return True
@@ -941,9 +925,7 @@ class PyPIHarvester(BaseHarvester):
 
         return min(100, score)
 
-    def _determine_risk_level(
-        self, is_official: bool, has_dangerous_deps: bool
-    ) -> RiskLevel:
+    def _determine_risk_level(self, is_official: bool, has_dangerous_deps: bool) -> RiskLevel:
         """Determine risk level based on verification and dependencies.
 
         Args:

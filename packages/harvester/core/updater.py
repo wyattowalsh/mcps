@@ -58,9 +58,7 @@ class ServerUpdater:
         """
         self.session = session
 
-    async def update_server(
-        self, server_id: int, updates: Dict[str, Any]
-    ) -> Optional[Server]:
+    async def update_server(self, server_id: int, updates: Dict[str, Any]) -> Optional[Server]:
         """Update a server with the provided fields.
 
         Args:
@@ -78,9 +76,7 @@ class ServerUpdater:
 
         try:
             # Fetch the server
-            result = await self.session.execute(
-                select(Server).where(Server.id == server_id)
-            )
+            result = await self.session.execute(select(Server).where(Server.id == server_id))
             server = result.scalar_one_or_none()
 
             if not server:
@@ -141,9 +137,7 @@ class ServerUpdater:
 
         try:
             # Find the server
-            result = await self.session.execute(
-                select(Server).where(Server.primary_url == url)
-            )
+            result = await self.session.execute(select(Server).where(Server.primary_url == url))
             server = result.scalar_one_or_none()
 
             if not server:
@@ -175,9 +169,7 @@ class ServerUpdater:
             logger.error(f"Error refreshing server {url}: {e}")
             raise UpdateError(f"Failed to refresh server: {e}")
 
-    async def bulk_update_servers(
-        self, filters: Dict[str, Any], updates: Dict[str, Any]
-    ) -> int:
+    async def bulk_update_servers(self, filters: Dict[str, Any], updates: Dict[str, Any]) -> int:
         """Perform bulk updates on servers matching the given filters.
 
         Args:
@@ -365,9 +357,7 @@ class ServerUpdater:
                     self.session.add(server)
                     count += 1
 
-                    logger.debug(
-                        f"Updated risk level for {server.name}: {old_risk} -> {new_risk}"
-                    )
+                    logger.debug(f"Updated risk level for {server.name}: {old_risk} -> {new_risk}")
 
             await self.session.commit()
             logger.success(f"Updated risk levels for {count} servers")
@@ -522,15 +512,12 @@ class ServerUpdater:
             )
             top_servers = result.scalars().all()
             stats["top_servers"] = [
-                {"name": s.name, "stars": s.stars, "url": s.primary_url}
-                for s in top_servers
+                {"name": s.name, "stars": s.stars, "url": s.primary_url} for s in top_servers
             ]
 
             # Recent activity
             result = await self.session.execute(
-                select(Server)
-                .order_by(Server.last_indexed_at.desc())
-                .limit(5)
+                select(Server).order_by(Server.last_indexed_at.desc()).limit(5)
             )
             recent_servers = result.scalars().all()
             stats["recently_updated"] = [
@@ -545,9 +532,7 @@ class ServerUpdater:
             # Processing log stats
             for status in ["pending", "processing", "completed", "failed", "skipped"]:
                 result = await self.session.execute(
-                    select(func.count(ProcessingLog.id)).where(
-                        ProcessingLog.status == status
-                    )
+                    select(func.count(ProcessingLog.id)).where(ProcessingLog.status == status)
                 )
                 stats[f"processing_{status}"] = result.scalar()
 

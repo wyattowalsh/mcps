@@ -78,10 +78,10 @@ Vector embeddings (OpenAI text-embedding-3-small) for RAG workflows
 Full dependency tree extraction for network analysis
 :::
 
-:::{grid-item-card} {octicon}`database` SQLite-First
+:::{grid-item-card} {octicon}`database` PostgreSQL-Powered
 :class-header: bg-dark text-white
 
-Zero-latency, local-first analytics with WAL mode
+Production-ready database with connection pooling and pgvector
 :::
 
 ::::
@@ -184,6 +184,7 @@ flowchart TB
         NPM[NPM<br/>Registry]
         PYPI[PyPI<br/>JSON API]
         DOCKER[Docker<br/>Registry v2]
+        SOCIAL[Social Media<br/>Reddit/Twitter/YouTube]
     end
 
     subgraph Harvester["Harvester Engine"]
@@ -196,8 +197,12 @@ flowchart TB
         BUS[Bus Factor<br/>Calculator]
     end
 
+    subgraph Cache["Caching Layer"]
+        REDIS[(Redis<br/>Cache)]
+    end
+
     subgraph Storage["Data Layer"]
-        DB[(SQLite<br/>+ sqlite-vec)]
+        DB[(PostgreSQL<br/>+ pgvector)]
     end
 
     subgraph Export["Export Formats"]
@@ -206,14 +211,22 @@ flowchart TB
         VEC[Vector<br/>Binary]
     end
 
+    subgraph Monitoring["Observability"]
+        METRICS[Prometheus<br/>Metrics]
+        LOGS[Structured<br/>Logging]
+        SENTRY[Error<br/>Tracking]
+    end
+
     GH --> ADAPTER
     NPM --> ADAPTER
     PYPI --> ADAPTER
     DOCKER --> ADAPTER
+    SOCIAL --> ADAPTER
 
-    ADAPTER --> AST
-    ADAPTER --> EMB
-    ADAPTER --> BUS
+    ADAPTER --> REDIS
+    REDIS --> AST
+    REDIS --> EMB
+    REDIS --> BUS
 
     AST --> DB
     EMB --> DB
@@ -223,11 +236,17 @@ flowchart TB
     DB --> JSONL
     DB --> VEC
 
+    DB --> METRICS
+    ADAPTER --> LOGS
+    DB --> SENTRY
+
     style Sources fill:#e1f5ff
     style Harvester fill:#fff3cd
     style Analysis fill:#d4edda
+    style Cache fill:#ffe4b5
     style Storage fill:#f8d7da
     style Export fill:#e2e3e5
+    style Monitoring fill:#e8f5e9
 ```
 
 **Core Components:**
@@ -235,8 +254,10 @@ flowchart TB
 - **Harvester Engine:** Resilient ETL with retry logic (tenacity)
 - **Adapter Layer:** Source-specific ingestion strategies
 - **Analysis Pipeline:** Security scanning, embeddings, metrics
-- **SQLite Database:** ACID-compliant storage with vector search
+- **Caching Layer:** Redis-backed caching for performance
+- **PostgreSQL Database:** Production-grade storage with vector search
 - **Export Engine:** Analytical format conversion
+- **Monitoring Stack:** Prometheus metrics, structured logging, error tracking
 
 For detailed architecture documentation, see [Architecture](architecture.md).
 
@@ -248,6 +269,7 @@ For detailed architecture documentation, see [Architecture](architecture.md).
 
 installation
 quick-start
+quick-start-postgresql
 ```
 
 ```{toctree}
@@ -268,6 +290,12 @@ guides/index
 guides/harvesting
 guides/analysis
 guides/deployment
+guides/production-deployment
+guides/caching
+guides/monitoring
+guides/postgresql-migration
+guides/postgresql-migration-plan
+guides/postgresql-migration-summary
 ```
 
 ```{toctree}
@@ -286,6 +314,7 @@ developer-guide/index
 contributing
 developer-guide/adding-adapters
 developer-guide/testing
+developer-guide/frontend-development
 ```
 
 ```{toctree}
@@ -297,6 +326,7 @@ api/harvester
 api/adapters
 api/analysis
 api/exporters
+api/health-endpoints
 ```
 
 ```{toctree}

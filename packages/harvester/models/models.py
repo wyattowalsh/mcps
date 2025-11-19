@@ -20,7 +20,6 @@ from packages.harvester.core.models import (
     RiskLevel,
 )
 
-
 # --- Core Entity: Server ---
 
 
@@ -243,9 +242,7 @@ class ProcessingLog(BaseEntity, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     url: str = Field(index=True, unique=True)  # The URL being processed
-    status: str = Field(
-        index=True
-    )  # "pending", "processing", "completed", "failed", "skipped"
+    status: str = Field(index=True)  # "pending", "processing", "completed", "failed", "skipped"
     attempts: int = Field(default=0)
     last_attempt_at: Optional[datetime] = None
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))

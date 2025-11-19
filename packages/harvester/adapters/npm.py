@@ -105,7 +105,11 @@ class NPMHarvester(BaseHarvester):
                     # Handle @scope/package in URL (encoded as %40scope/package)
                     package_name = "/".join(path_parts[pkg_idx:])
                     package_name = package_name.replace("%40", "@")
-                    return package_name.split("@")[-1] if "@" in package_name and not package_name.startswith("@") else package_name
+                    return (
+                        package_name.split("@")[-1]
+                        if "@" in package_name and not package_name.startswith("@")
+                        else package_name
+                    )
             raise HarvesterError(f"Invalid NPM package URL: {url}")
 
         # Remove version specifier if present (e.g., @scope/package@1.0.0 -> @scope/package)

@@ -2,17 +2,505 @@
 
 ## Context
 
-The `apps/api/` directory contains the FastAPI RESTful API that provides HTTP access to MCPS data and operations. It serves as the write-access and administrative interface to the system.
+The `apps/api/` directory contains the production-ready FastAPI RESTful API that provides HTTP access to MCPS data and operations. It serves as the write-access and administrative interface to the system.
 
-**Purpose:** Provide secure, rate-limited API access for CRUD operations, bulk updates, server refreshing, and administrative maintenance tasks.
+**Purpose:** Provide secure, rate-limited, monitored API access for CRUD operations, bulk updates, server refreshing, and administrative maintenance tasks.
 
-**Architecture:** Single-file FastAPI application (`main.py`) with async database access, API key authentication, rate limiting, and comprehensive OpenAPI documentation.
+**Architecture:** Single-file FastAPI application (`main.py`) with:
+- 9-layer middleware stack (logging, metrics, security, caching)
+- Async PostgreSQL database access with connection pooling
+- Redis-backed caching layer with graceful degradation
+- API key authentication with role-based access control
+- SlowAPI rate limiting (Redis-backed)
+- Prometheus metrics collection
+- Structured JSON logging with request ID tracking
+- Comprehensive OpenAPI documentation
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `main.py` | Complete FastAPI application with all endpoints and middleware |
+| `packages/harvester/middleware.py` | 9-layer middleware stack implementation |
+| `packages/harvester/cache.py` | Redis caching decorators and utilities |
+| `packages/harvester/logging.py` | Structured logging with request ID tracking |
+| `packages/harvester/metrics.py` | Prometheus metrics definitions |
+| `packages/harvester/exceptions.py` | Custom exception hierarchy |
+
+## Middleware Stack
+
+**CRITICAL:** Middleware order matters! First added is outermost (executes first on request, last on response).
+
+### Layer 1: HealthCheckBypassMiddleware
+**Purpose:** Skip logging and metrics for health check endpoints
+**When:** Always first
+**Why:** Prevents health check spam in logs and metrics
+
+```python
+# Bypasses /health, /healthz, /ready endpoints
+app.add_middleware(HealthCheckBypassMiddleware)
+```
+
+### Layer 2: ErrorHandlerMiddleware
+**Purpose:** Global exception handling with structured JSON responses
+**When:** Second (after health check bypass)
+**Why:** Catches all unhandled exceptions and returns consistent error format
+
+```python
+# Catches all exceptions, logs them, returns JSON response
+app.add_middleware(ErrorHandlerMiddleware)
+
+# Returns:
+# {
+#   "error": "InternalServerError",
+#   "message": "An unexpected error occurred",
+#   "request_id": "uuid",
+#   "timestamp": "ISO8601"
+# }
+```
+
+### Layer 3: SecurityHeadersMiddleware
+**Purpose:** Add security headers (HSTS, CSP, X-Frame-Options, etc.)
+**When:** Third (security is high priority)
+**Why:** Protect against common web vulnerabilities
+
+```python
+if settings.security_headers_enabled:
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts_enabled=settings.hsts_enabled
+    )
+
+# Adds headers:
+# - Strict-Transport-Security (HSTS)
+# - Content-Security-Policy (CSP)
+# - X-Content-Type-Options: nosniff
+# - X-Frame-Options: DENY
+# - X-XSS-Protection: 1; mode=block
+```
+
+### Layer 4: CompressionMiddleware
+**Purpose:** Gzip compress responses >1KB
+**When:** Fourth (compress before metrics)
+**Why:** Reduce bandwidth, improve response times
+
+```python
+if settings.compression_enabled:
+    CompressionMiddleware = create_compression_middleware(
+        minimum_size=settings.compression_minimum_size,  # Default: 1024 bytes
+        compresslevel=settings.compression_level,        # Default: 6 (1-9)
+    )
+    app.add_middleware(CompressionMiddleware)
+```
+
+### Layer 5: MetricsMiddleware
+**Purpose:** Collect Prometheus metrics for every request
+**When:** Fifth (after compression)
+**Why:** Track performance, errors, latency
+
+```python
+if settings.metrics_enabled:
+    app.add_middleware(MetricsMiddleware)
+
+# Collects metrics:
+# - mcps_http_requests_total (counter)
+# - mcps_http_request_duration_seconds (histogram)
+# - mcps_http_requests_in_progress (gauge)
+# - mcps_http_request_size_bytes (summary)
+# - mcps_http_response_size_bytes (summary)
+```
+
+### Layer 6: LoggingMiddleware
+**Purpose:** Log all requests and responses with structured data
+**When:** Sixth (after metrics collection)
+**Why:** Audit trail, debugging, monitoring
+
+```python
+app.add_middleware(LoggingMiddleware)
+
+# Logs include:
+# - request_id, method, path, query_params
+# - status_code, response_time
+# - client_ip, user_agent
+# - request/response sizes
+# - errors (if any)
+```
+
+### Layer 7: RateLimitHeadersMiddleware
+**Purpose:** Add rate limit info to response headers
+**When:** Seventh (after logging)
+**Why:** Client visibility into rate limits
+
+```python
+app.add_middleware(RateLimitHeadersMiddleware)
+
+# Adds headers:
+# - X-RateLimit-Limit: 60
+# - X-RateLimit-Remaining: 45
+# - X-RateLimit-Reset: 1640000000
+```
+
+### Layer 8: RequestIDMiddleware
+**Purpose:** Generate/track unique request IDs for distributed tracing
+**When:** Eighth (near the end)
+**Why:** Correlate logs across services
+
+```python
+app.add_middleware(RequestIDMiddleware)
+
+# Adds to response headers:
+# - X-Request-ID: uuid
+# - X-Correlation-ID: uuid (if provided in request)
+```
+
+### Layer 9: CORSMiddleware
+**Purpose:** Handle Cross-Origin Resource Sharing
+**When:** Last (innermost)
+**Why:** Must be closest to route handlers
+
+```python
+if settings.cors_enabled:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+```
+
+## Caching with Redis
+
+### Cache Decorators
+
+Use `@cached` and `@invalidate_cache` decorators for easy Redis integration:
+
+```python
+from packages.harvester.cache import cached, invalidate_cache
+
+@app.get("/servers")
+@cached(ttl=300, key_prefix="servers:list")  # Cache for 5 minutes
+async def list_servers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+):
+    """List servers with caching."""
+    # Database query (only executed on cache miss)
+    pass
+
+@app.put("/servers/{server_id}")
+@invalidate_cache(pattern="servers:*")  # Invalidate all server caches
+async def update_server(server_id: int, updates: ServerUpdate):
+    """Update server and invalidate caches."""
+    # Update logic
+    pass
+```
+
+### Manual Cache Control
+
+For fine-grained control, use the cache directly:
+
+```python
+from packages.harvester.cache import get_cache
+
+@app.get("/servers/{server_id}")
+async def get_server(server_id: int):
+    """Get server with manual caching."""
+    cache = get_cache()
+    cache_key = f"servers:detail:{server_id}"
+
+    # Try to get from cache
+    cached_data = await cache.get(cache_key)
+    if cached_data:
+        return cached_data
+
+    # Cache miss - query database
+    server = await fetch_server(server_id)
+
+    # Store in cache with 10-minute TTL
+    await cache.set(cache_key, server, ttl=600)
+
+    return server
+```
+
+### Cache Invalidation Strategies
+
+```python
+# Invalidate specific key
+await cache.delete("servers:detail:123")
+
+# Invalidate by pattern
+await cache.delete_pattern("servers:*")
+
+# Invalidate multiple keys
+await cache.delete_many(["servers:list", "servers:stats"])
+```
+
+## Database Access (PostgreSQL)
+
+### Async Session Management
+
+Use FastAPI dependency injection for sessions:
+
+```python
+from packages.harvester.database import async_session_maker
+
+async def get_session() -> AsyncSession:
+    """Get async database session."""
+    async with async_session_maker() as session:
+        yield session
+
+# Use in endpoints
+@app.get("/servers")
+async def list_servers(session: AsyncSession = Depends(get_session)):
+    """List servers using injected session."""
+    result = await session.execute(select(Server))
+    return result.scalars().all()
+```
+
+### Query Patterns
+
+```python
+# Simple query
+async def get_servers(session: AsyncSession):
+    result = await session.execute(select(Server).limit(100))
+    return result.scalars().all()
+
+# Filtered query
+async def get_github_servers(session: AsyncSession):
+    query = select(Server).where(Server.host_type == "github")
+    result = await session.execute(query)
+    return result.scalars().all()
+
+# Join query
+async def get_servers_with_tools(session: AsyncSession):
+    query = (
+        select(Server)
+        .join(Tool, Server.id == Tool.server_id)
+        .where(Tool.name.ilike("%search%"))
+    )
+    result = await session.execute(query)
+    return result.scalars().all()
+```
+
+### Transactions
+
+```python
+@app.post("/servers")
+async def create_server(
+    server_data: ServerCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create server with transaction."""
+    try:
+        # Create server
+        server = Server(**server_data.model_dump())
+        session.add(server)
+
+        # Flush to get ID
+        await session.flush()
+
+        # Create related entities
+        for tool_data in server_data.tools:
+            tool = Tool(**tool_data, server_id=server.id)
+            session.add(tool)
+
+        # Commit transaction
+        await session.commit()
+        await session.refresh(server)
+
+        return server
+    except Exception as e:
+        # Rollback on error
+        await session.rollback()
+        raise HTTPException(500, f"Failed to create server: {str(e)}")
+```
+
+## Logging with Request IDs
+
+### Structured Logging
+
+Use RequestContext for automatic request ID injection:
+
+```python
+from packages.harvester.logging import RequestContext
+from loguru import logger
+
+@app.get("/servers/{server_id}")
+async def get_server(server_id: int):
+    """Get server with structured logging."""
+    logger.info("Fetching server", server_id=server_id)
+
+    try:
+        server = await fetch_server(server_id)
+        logger.success("Server fetched successfully", server_id=server_id)
+        return server
+    except Exception as e:
+        logger.error(
+            "Failed to fetch server",
+            server_id=server_id,
+            error=str(e),
+            exc_info=True
+        )
+        raise
+```
+
+### Log Levels
+
+```python
+# DEBUG - Detailed diagnostic information
+logger.debug("Cache hit", key="servers:123")
+
+# INFO - General informational messages
+logger.info("Server created", server_id=123)
+
+# SUCCESS - Successful operations (loguru specific)
+logger.success("Health check passed")
+
+# WARNING - Warning messages (non-critical issues)
+logger.warning("Cache unavailable, using fallback", error=str(e))
+
+# ERROR - Error messages (handled exceptions)
+logger.error("Failed to update server", server_id=123, error=str(e))
+
+# CRITICAL - Critical errors (system failures)
+logger.critical("Database connection lost")
+```
+
+## Prometheus Metrics
+
+### Using Metric Decorators
+
+```python
+from packages.harvester.metrics import track_time, count_calls
+
+@app.get("/servers")
+@track_time("server_list_duration")  # Track execution time
+@count_calls("server_list_calls")    # Count calls
+async def list_servers():
+    """List servers with metrics tracking."""
+    pass
+```
+
+### Manual Metrics
+
+```python
+from packages.harvester.metrics import (
+    http_requests_total,
+    http_request_duration_seconds,
+    db_queries_total,
+)
+
+@app.get("/servers")
+async def list_servers():
+    """List servers with manual metrics."""
+    import time
+    start_time = time.time()
+
+    try:
+        # Query database
+        db_queries_total.labels(operation="select", table="servers").inc()
+        servers = await fetch_servers()
+
+        # Record success
+        http_requests_total.labels(
+            method="GET",
+            endpoint="/servers",
+            status=200
+        ).inc()
+
+        return servers
+    except Exception as e:
+        # Record error
+        http_requests_total.labels(
+            method="GET",
+            endpoint="/servers",
+            status=500
+        ).inc()
+        raise
+    finally:
+        # Record duration
+        duration = time.time() - start_time
+        http_request_duration_seconds.labels(
+            method="GET",
+            endpoint="/servers"
+        ).observe(duration)
+```
+
+### Viewing Metrics
+
+```python
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    """Prometheus metrics endpoint."""
+    from packages.harvester.metrics import get_metrics
+    return get_metrics()
+
+# Example metrics output:
+# mcps_http_requests_total{method="GET",endpoint="/servers",status="200"} 1234
+# mcps_http_request_duration_seconds_bucket{method="GET",endpoint="/servers",le="0.1"} 1000
+# mcps_db_queries_total{operation="select",table="servers"} 567
+# mcps_cache_hits_total 890
+# mcps_cache_misses_total 123
+```
+
+## Health Checks
+
+### Basic Health Check
+
+```python
+@app.get("/health")
+async def health():
+    """Basic health check endpoint."""
+    return {"status": "healthy"}
+```
+
+### Comprehensive Health Check
+
+```python
+from packages.harvester.database import health_check as db_health_check
+from packages.harvester.cache import get_cache
+
+@app.get("/health")
+async def health():
+    """Comprehensive health check."""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Database health
+    try:
+        db_healthy = await db_health_check()
+        health_status["checks"]["database"] = {
+            "status": "healthy" if db_healthy else "unhealthy",
+            "type": "postgresql"
+        }
+    except Exception as e:
+        health_status["checks"]["database"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+
+    # Cache health
+    try:
+        cache = get_cache()
+        await cache.ping()
+        health_status["checks"]["cache"] = {
+            "status": "healthy",
+            "type": "redis"
+        }
+    except Exception as e:
+        health_status["checks"]["cache"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        # Cache failures are acceptable (graceful degradation)
+
+    return health_status
+```
 
 ## Endpoint Design Patterns
 
@@ -21,16 +509,25 @@ The `apps/api/` directory contains the FastAPI RESTful API that provides HTTP ac
 All entity endpoints follow RESTful conventions:
 
 ```python
-# List resources (with pagination)
+# List resources (with pagination and caching)
 @app.get("/servers", response_model=List[ServerResponse])
+@limiter.limit("60/minute")
+@cached(ttl=300, key_prefix="servers:list")
 async def list_servers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
     _role: str = Depends(verify_api_key),
 ):
-    """List servers with pagination."""
-    pass
+    """List servers with pagination and caching."""
+    logger.info("Listing servers", skip=skip, limit=limit)
+
+    query = select(Server).offset(skip).limit(limit).order_by(Server.created_at.desc())
+    result = await session.execute(query)
+    servers = result.scalars().all()
+
+    logger.success(f"Retrieved {len(servers)} servers")
+    return servers
 
 # Get single resource
 @app.get("/servers/{server_id}", response_model=ServerResponse)

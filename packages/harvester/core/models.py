@@ -10,8 +10,9 @@ from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
 from sqlalchemy import Column
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlmodel import Field, JSON, SQLModel
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlmodel import JSON, Field, SQLModel
 
 
 def get_json_column():

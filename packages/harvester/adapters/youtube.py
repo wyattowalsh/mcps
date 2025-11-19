@@ -83,8 +83,7 @@ class YouTubeHarvester(BaseHarvester):
         """
         if not self.config.api_key:
             raise ValueError(
-                "YouTube API key not configured. "
-                "Set YOUTUBE_API_KEY environment variable."
+                "YouTube API key not configured. Set YOUTUBE_API_KEY environment variable."
             )
 
         youtube = build("youtube", "v3", developerKey=self.config.api_key)
@@ -214,9 +213,7 @@ class YouTubeHarvester(BaseHarvester):
             channel_url = f"https://www.youtube.com/channel/{video_data['channel_id']}"
 
             # Parse published date
-            published_at = datetime.fromisoformat(
-                video_data["published_at"].replace("Z", "+00:00")
-            )
+            published_at = datetime.fromisoformat(video_data["published_at"].replace("Z", "+00:00"))
 
             video = Video(
                 platform=VideoPlatform.YOUTUBE,
@@ -264,9 +261,7 @@ class YouTubeHarvester(BaseHarvester):
 
         for video in videos:
             # Check if video already exists
-            result = await session.execute(
-                select(Video).where(Video.video_id == video.video_id)
-            )
+            result = await session.execute(select(Video).where(Video.video_id == video.video_id))
             existing = result.scalar_one_or_none()
 
             if existing:
@@ -368,9 +363,7 @@ class YouTubeHarvester(BaseHarvester):
 
         for pattern in self.url_patterns.values():
             matches = pattern.findall(text)
-            urls.extend(
-                [f"{m[0]}/{m[1]}" if isinstance(m, tuple) else m for m in matches]
-            )
+            urls.extend([f"{m[0]}/{m[1]}" if isinstance(m, tuple) else m for m in matches])
 
         return list(set(urls))  # Deduplicate
 
@@ -503,9 +496,7 @@ class YouTubeHarvester(BaseHarvester):
 
         for url in video.mentioned_urls:
             # Try to find matching server
-            result = await session.execute(
-                select(Server).where(Server.primary_url.contains(url))
-            )
+            result = await session.execute(select(Server).where(Server.primary_url.contains(url)))
             server = result.scalar_one_or_none()
 
             if server:

@@ -86,9 +86,7 @@ async def mark_processing_started(url: str, session: AsyncSession) -> Processing
     return log
 
 
-async def mark_processing_completed(
-    url: str, session: AsyncSession
-) -> ProcessingLog:
+async def mark_processing_completed(url: str, session: AsyncSession) -> ProcessingLog:
     """Mark a URL as successfully processed.
 
     This updates the status to "completed" and clears any error messages.
@@ -167,9 +165,7 @@ async def mark_processing_failed(
     return log
 
 
-async def mark_processing_skipped(
-    url: str, reason: str, session: AsyncSession
-) -> ProcessingLog:
+async def mark_processing_skipped(url: str, reason: str, session: AsyncSession) -> ProcessingLog:
     """Mark a URL as skipped with a reason.
 
     This is used when a URL is intentionally skipped (e.g., already processed,
@@ -269,11 +265,7 @@ async def get_failed_urls(session: AsyncSession, limit: int = 100) -> list[str]:
         for url in failed:
             print(f"Failed: {url}")
     """
-    statement = (
-        select(ProcessingLog.url)
-        .where(ProcessingLog.status == "failed")
-        .limit(limit)
-    )
+    statement = select(ProcessingLog.url).where(ProcessingLog.status == "failed").limit(limit)
     result = await session.execute(statement)
     urls = result.scalars().all()
 
@@ -298,11 +290,7 @@ async def get_pending_urls(session: AsyncSession, limit: int = 100) -> list[str]
         for url in pending:
             await harvest(url)
     """
-    statement = (
-        select(ProcessingLog.url)
-        .where(ProcessingLog.status == "pending")
-        .limit(limit)
-    )
+    statement = select(ProcessingLog.url).where(ProcessingLog.status == "pending").limit(limit)
     result = await session.execute(statement)
     urls = result.scalars().all()
 
