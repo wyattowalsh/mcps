@@ -42,7 +42,7 @@ export default async function ServerDetailPage({ params }: ServerDetailPageProps
     notFound();
   }
 
-  const data = getServerById(serverId);
+  const data = await getServerById(serverId);
 
   if (!data.server) {
     notFound();
