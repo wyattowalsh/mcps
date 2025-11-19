@@ -4,14 +4,14 @@ import { getStats, getTopServers, getSocialContentCounts } from '@/lib/db';
 import { StatsCards } from '@/components/stats-cards';
 import { ServerCard } from '@/components/server-card';
 
-// Force dynamic rendering since we're using SQLite
+// Force dynamic rendering since we're using PostgreSQL
 export const dynamic = 'force-dynamic';
 
-export default function Home() {
-  // Fetch data using Server Components (direct SQLite access)
-  const stats = getStats();
-  const topServers = getTopServers(6);
-  const socialCounts = getSocialContentCounts();
+export default async function Home() {
+  // Fetch data using Server Components (async PostgreSQL access)
+  const stats = await getStats();
+  const topServers = await getTopServers(6);
+  const socialCounts = await getSocialContentCounts();
 
   return (
     <div className="min-h-screen">

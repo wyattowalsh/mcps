@@ -10,7 +10,7 @@ import {
 } from '@/lib/db';
 import { ServerCard } from '@/components/server-card';
 
-// Force dynamic rendering since we're using SQLite
+// Force dynamic rendering since we're using PostgreSQL
 export const dynamic = 'force-dynamic';
 
 interface SearchParams {
@@ -37,21 +37,21 @@ export default async function ServersPage({ searchParams: searchParamsPromise }:
 
   if (searchParams.search) {
     // Search mode
-    servers = searchServers(searchParams.search, ITEMS_PER_PAGE);
+    servers = await searchServers(searchParams.search, ITEMS_PER_PAGE);
     totalCount = servers.length; // Simple approximation for search
   } else if (searchParams.host_type || searchParams.risk_level) {
     // Filter mode
-    servers = filterServers(
+    servers = await filterServers(
       searchParams.host_type,
       searchParams.risk_level,
       ITEMS_PER_PAGE,
       offset
     );
-    totalCount = getTotalServersCount(searchParams.host_type, searchParams.risk_level);
+    totalCount = await getTotalServersCount(searchParams.host_type, searchParams.risk_level);
   } else {
     // Default mode - all servers
-    servers = getServers(ITEMS_PER_PAGE, offset);
-    totalCount = getTotalServersCount();
+    servers = await getServers(ITEMS_PER_PAGE, offset);
+    totalCount = await getTotalServersCount();
   }
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);

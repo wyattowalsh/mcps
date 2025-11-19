@@ -3,11 +3,11 @@ import { ArrowLeft } from 'lucide-react';
 import { getDependencyGraph } from '@/lib/db';
 import { ForceGraph } from '@/components/force-graph';
 
-// Force dynamic rendering since we're using SQLite
+// Force dynamic rendering since we're using PostgreSQL
 export const dynamic = 'force-dynamic';
 
-export default function GraphPage() {
-  const graphData = getDependencyGraph();
+export default async function GraphPage() {
+  const graphData = await getDependencyGraph();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">

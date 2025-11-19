@@ -14,7 +14,7 @@ import {
 import { SocialFeed } from '@/components/social-feed';
 import { TrendingSection } from '@/components/trending-section';
 
-// Force dynamic rendering since we're using SQLite
+// Force dynamic rendering since we're using PostgreSQL
 export const dynamic = 'force-dynamic';
 
 interface SocialPageProps {
@@ -27,7 +27,7 @@ interface SocialPageProps {
   };
 }
 
-export default function SocialPage({ searchParams }: SocialPageProps) {
+export default async function SocialPage({ searchParams }: SocialPageProps) {
   const page = parseInt(searchParams.page || '1', 10);
   const limit = 12;
   const offset = (page - 1) * limit;
@@ -40,7 +40,7 @@ export default function SocialPage({ searchParams }: SocialPageProps) {
 
   // Fetch data based on type filter
   let posts = typeFilter === 'all' || typeFilter === 'posts'
-    ? getSocialPosts(limit, offset, {
+    ? await getSocialPosts(limit, offset, {
         platform: platformFilter as SocialPlatform,
         category: categoryFilter,
         sentiment: sentimentFilter,
@@ -48,23 +48,23 @@ export default function SocialPage({ searchParams }: SocialPageProps) {
     : [];
 
   let videos = typeFilter === 'all' || typeFilter === 'videos'
-    ? getVideos(limit, offset, {
+    ? await getVideos(limit, offset, {
         platform: platformFilter as VideoPlatform,
         category: categoryFilter,
       })
     : [];
 
   let articles = typeFilter === 'all' || typeFilter === 'articles'
-    ? getArticles(limit, offset, {
+    ? await getArticles(limit, offset, {
         category: categoryFilter,
       })
     : [];
 
   // Get trending content for the trending section
-  const trendingContent = getTrendingContent(7, 50);
+  const trendingContent = await getTrendingContent(7, 50);
 
   // Get content counts
-  const counts = getSocialContentCounts();
+  const counts = await getSocialContentCounts();
 
   const hasFilters = platformFilter || categoryFilter || sentimentFilter || typeFilter !== 'all';
 

@@ -32,7 +32,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from packages.harvester.core.models import HostType, RiskLevel
 from packages.harvester.core.updater import ServerUpdater, UpdateError, ValidationError
-from packages.harvester.database import async_session_maker, close_db, init_db
+from packages.harvester.database import async_session_maker, close_db, health_check, init_db
 from packages.harvester.models.models import (
     Dependency,
     Prompt,
@@ -334,9 +334,49 @@ async def shutdown():
 
 @app.get("/health", tags=["Health"])
 @limiter.limit("100/minute")
-async def health_check():
-    """Health check endpoint."""
+async def health_check_api():
+    """Basic health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/health/db", tags=["Health"])
+@limiter.limit("100/minute")
+async def health_check_database():
+    """Database health check endpoint with connection pool statistics.
+
+    Returns:
+        Database health information including:
+        - Connection status
+        - Query latency
+        - Connection pool statistics (PostgreSQL only)
+        - Database type and version
+
+    Raises:
+        HTTPException: If database is unhealthy
+    """
+    try:
+        health_info = await health_check()
+
+        if not health_info.get("healthy"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Database unhealthy: {health_info.get('error', 'Unknown error')}",
+            )
+
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": health_info,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database health check failed: {str(e)}",
+        )
 
 
 # --- Server Endpoints ---

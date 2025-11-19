@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import { join } from 'path';
+import { Pool, PoolClient, QueryResult } from 'pg';
 
 // Types based on PRD schema
 export type HostType = 'github' | 'gitlab' | 'npm' | 'pypi' | 'docker' | 'http';
@@ -210,38 +209,88 @@ export interface Article {
   created_at: string;
 }
 
-// Database connection with readonly mode and WAL enabled
-let db: Database.Database | null = null;
+// PostgreSQL connection pool with configuration
+let pool: Pool | null = null;
 
-function getDb(): Database.Database {
-  if (!db) {
-    const dbPath = join(process.cwd(), '../../data/mcps.db');
-    db = new Database(dbPath, {
-      readonly: true,
-      fileMustExist: true
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.POSTGRES_PORT || '5432'),
+      database: process.env.POSTGRES_DB || 'mcps',
+      user: process.env.POSTGRES_USER || 'mcps',
+      password: process.env.POSTGRES_PASSWORD || 'mcps_password',
+      max: 20, // Maximum pool size
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
     });
-    db.pragma('journal_mode = WAL');
+
+    // Handle pool errors
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle PostgreSQL client', err);
+    });
   }
-  return db;
+  return pool;
+}
+
+/**
+ * Query with retry logic for better resilience
+ */
+async function queryWithRetry<T>(
+  query: string,
+  params: any[] = [],
+  maxRetries: number = 3
+): Promise<QueryResult<T>> {
+  const currentPool = getPool();
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await currentPool.query<T>(query, params);
+    } catch (error) {
+      console.error(`Database query failed (attempt ${i + 1}/${maxRetries}):`, error);
+
+      if (i === maxRetries - 1) {
+        throw error;
+      }
+
+      // Wait before retrying (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+
+  throw new Error('Query failed after all retries');
+}
+
+/**
+ * Health check for database connection
+ */
+export async function checkConnection(): Promise<boolean> {
+  try {
+    const result = await queryWithRetry('SELECT 1 as health');
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    return false;
+  }
 }
 
 /**
  * Get servers with pagination
  */
-export function getServers(limit: number = 20, offset: number = 0): Server[] {
-  const database = getDb();
-  const stmt = database.prepare(`
+export async function getServers(limit: number = 20, offset: number = 0): Promise<Server[]> {
+  const result = await queryWithRetry<Server>(`
     SELECT * FROM server
     ORDER BY stars DESC, health_score DESC
-    LIMIT ? OFFSET ?
-  `);
-  return stmt.all(limit, offset) as Server[];
+    LIMIT $1 OFFSET $2
+  `, [limit, offset]);
+
+  return result.rows;
 }
 
 /**
  * Get server by ID with all related data
  */
-export function getServerById(id: number): {
+export async function getServerById(id: number): Promise<{
   server: Server | null;
   tools: Tool[];
   resources: ResourceTemplate[];
@@ -249,11 +298,13 @@ export function getServerById(id: number): {
   dependencies: Dependency[];
   contributors: Contributor[];
   releases: Release[];
-} {
-  const database = getDb();
+}> {
+  const serverResult = await queryWithRetry<Server>(
+    'SELECT * FROM server WHERE id = $1',
+    [id]
+  );
 
-  const serverStmt = database.prepare('SELECT * FROM server WHERE id = ?');
-  const server = serverStmt.get(id) as Server | undefined;
+  const server = serverResult.rows[0] || null;
 
   if (!server) {
     return {
@@ -267,128 +318,126 @@ export function getServerById(id: number): {
     };
   }
 
-  const toolsStmt = database.prepare('SELECT * FROM tool WHERE server_id = ?');
-  const tools = toolsStmt.all(id) as Tool[];
-
-  const resourcesStmt = database.prepare('SELECT * FROM resourcetemplate WHERE server_id = ?');
-  const resources = resourcesStmt.all(id) as ResourceTemplate[];
-
-  const promptsStmt = database.prepare('SELECT * FROM prompt WHERE server_id = ?');
-  const prompts = promptsStmt.all(id) as Prompt[];
-
-  const depsStmt = database.prepare('SELECT * FROM dependency WHERE server_id = ?');
-  const dependencies = depsStmt.all(id) as Dependency[];
-
-  const contribStmt = database.prepare('SELECT * FROM contributor WHERE server_id = ? ORDER BY commits DESC');
-  const contributors = contribStmt.all(id) as Contributor[];
-
-  const releasesStmt = database.prepare('SELECT * FROM release WHERE server_id = ? ORDER BY published_at DESC LIMIT 10');
-  const releases = releasesStmt.all(id) as Release[];
+  // Fetch all related data in parallel for better performance
+  const [toolsResult, resourcesResult, promptsResult, depsResult, contribResult, releasesResult] =
+    await Promise.all([
+      queryWithRetry<Tool>('SELECT * FROM tool WHERE server_id = $1', [id]),
+      queryWithRetry<ResourceTemplate>('SELECT * FROM resourcetemplate WHERE server_id = $1', [id]),
+      queryWithRetry<Prompt>('SELECT * FROM prompt WHERE server_id = $1', [id]),
+      queryWithRetry<Dependency>('SELECT * FROM dependency WHERE server_id = $1', [id]),
+      queryWithRetry<Contributor>('SELECT * FROM contributor WHERE server_id = $1 ORDER BY commits DESC', [id]),
+      queryWithRetry<Release>('SELECT * FROM release WHERE server_id = $1 ORDER BY published_at DESC LIMIT 10', [id])
+    ]);
 
   return {
     server,
-    tools,
-    resources,
-    prompts,
-    dependencies,
-    contributors,
-    releases
+    tools: toolsResult.rows,
+    resources: resourcesResult.rows,
+    prompts: promptsResult.rows,
+    dependencies: depsResult.rows,
+    contributors: contribResult.rows,
+    releases: releasesResult.rows
   };
 }
 
 /**
- * Search servers by name or description
+ * Search servers by name or description (case-insensitive)
  */
-export function searchServers(query: string, limit: number = 20): Server[] {
-  const database = getDb();
+export async function searchServers(query: string, limit: number = 20): Promise<Server[]> {
   const searchPattern = `%${query}%`;
-  const stmt = database.prepare(`
+  const result = await queryWithRetry<Server>(`
     SELECT * FROM server
-    WHERE name LIKE ? OR description LIKE ?
+    WHERE name ILIKE $1 OR description ILIKE $2
     ORDER BY stars DESC, health_score DESC
-    LIMIT ?
-  `);
-  return stmt.all(searchPattern, searchPattern, limit) as Server[];
+    LIMIT $3
+  `, [searchPattern, searchPattern, limit]);
+
+  return result.rows;
 }
 
 /**
  * Filter servers by host_type and/or risk_level
  */
-export function filterServers(
+export async function filterServers(
   hostType?: HostType,
   riskLevel?: RiskLevel,
   limit: number = 20,
   offset: number = 0
-): Server[] {
-  const database = getDb();
-
+): Promise<Server[]> {
   let query = 'SELECT * FROM server WHERE 1=1';
   const params: (string | number)[] = [];
+  let paramCount = 1;
 
   if (hostType) {
-    query += ' AND host_type = ?';
+    query += ` AND host_type = $${paramCount++}`;
     params.push(hostType);
   }
 
   if (riskLevel) {
-    query += ' AND risk_level = ?';
+    query += ` AND risk_level = $${paramCount++}`;
     params.push(riskLevel);
   }
 
-  query += ' ORDER BY stars DESC, health_score DESC LIMIT ? OFFSET ?';
+  query += ` ORDER BY stars DESC, health_score DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
   params.push(limit, offset);
 
-  const stmt = database.prepare(query);
-  return stmt.all(...params) as Server[];
+  const result = await queryWithRetry<Server>(query, params);
+  return result.rows;
 }
 
 /**
  * Get dashboard statistics
  */
-export function getStats(): DashboardStats {
-  const database = getDb();
-
-  // Total servers and average health score
-  const basicStats = database.prepare(`
+export async function getStats(): Promise<DashboardStats> {
+  // Get basic stats
+  const basicStatsResult = await queryWithRetry<{
+    total_servers: string;
+    average_health_score: string;
+    total_stars: string;
+  }>(`
     SELECT
       COUNT(*) as total_servers,
       COALESCE(AVG(health_score), 0) as average_health_score,
       COALESCE(SUM(stars), 0) as total_stars
     FROM server
-  `).get() as { total_servers: number; average_health_score: number; total_stars: number };
+  `);
+  const basicStats = basicStatsResult.rows[0];
 
-  // Total tools
-  const toolCount = database.prepare('SELECT COUNT(*) as count FROM tool').get() as { count: number };
+  // Get tool count
+  const toolCountResult = await queryWithRetry<{ count: string }>(
+    'SELECT COUNT(*) as count FROM tool'
+  );
+  const toolCount = toolCountResult.rows[0];
 
-  // Servers by host type
-  const byHostType = database.prepare(`
+  // Get servers by host type
+  const byHostTypeResult = await queryWithRetry<{ host_type: HostType; count: string }>(`
     SELECT host_type, COUNT(*) as count
     FROM server
     GROUP BY host_type
-  `).all() as { host_type: HostType; count: number }[];
+  `);
 
-  const servers_by_host_type = byHostType.reduce((acc, row) => {
-    acc[row.host_type] = row.count;
+  const servers_by_host_type = byHostTypeResult.rows.reduce((acc, row) => {
+    acc[row.host_type] = parseInt(row.count);
     return acc;
   }, {} as Record<HostType, number>);
 
-  // Servers by risk level
-  const byRiskLevel = database.prepare(`
+  // Get servers by risk level
+  const byRiskLevelResult = await queryWithRetry<{ risk_level: RiskLevel; count: string }>(`
     SELECT risk_level, COUNT(*) as count
     FROM server
     GROUP BY risk_level
-  `).all() as { risk_level: RiskLevel; count: number }[];
+  `);
 
-  const servers_by_risk_level = byRiskLevel.reduce((acc, row) => {
-    acc[row.risk_level] = row.count;
+  const servers_by_risk_level = byRiskLevelResult.rows.reduce((acc, row) => {
+    acc[row.risk_level] = parseInt(row.count);
     return acc;
   }, {} as Record<RiskLevel, number>);
 
   return {
-    total_servers: basicStats.total_servers,
-    total_tools: toolCount.count,
-    average_health_score: Math.round(basicStats.average_health_score),
-    total_stars: basicStats.total_stars,
+    total_servers: parseInt(basicStats.total_servers),
+    total_tools: parseInt(toolCount.count),
+    average_health_score: Math.round(parseFloat(basicStats.average_health_score)),
+    total_stars: parseInt(basicStats.total_stars),
     servers_by_host_type,
     servers_by_risk_level
   };
@@ -398,23 +447,22 @@ export function getStats(): DashboardStats {
  * Get dependency graph for visualization
  * Returns nodes (servers) and edges (shared dependencies)
  */
-export function getDependencyGraph(): {
+export async function getDependencyGraph(): Promise<{
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
-} {
-  const database = getDb();
-
+}> {
   // Get all servers as nodes
-  const nodes = database.prepare(`
+  const nodesResult = await queryWithRetry<DependencyGraphNode>(`
     SELECT id, name, host_type, stars, risk_level
     FROM server
     ORDER BY stars DESC
     LIMIT 100
-  `).all() as DependencyGraphNode[];
+  `);
+  const nodes = nodesResult.rows;
 
   // Get edges based on shared dependencies
-  // Find pairs of servers that share at least one dependency
-  const edges = database.prepare(`
+  // PostgreSQL supports CTEs (Common Table Expressions)
+  const edgesResult = await queryWithRetry<{ source: number; target: number; shared_dependencies: string }>(`
     WITH server_deps AS (
       SELECT DISTINCT d1.server_id as source, d2.server_id as target, d1.library_name
       FROM dependency d1
@@ -425,13 +473,13 @@ export function getDependencyGraph(): {
     SELECT
       source,
       target,
-      GROUP_CONCAT(library_name) as shared_dependencies
+      STRING_AGG(library_name, ',') as shared_dependencies
     FROM server_deps
     GROUP BY source, target
     HAVING COUNT(*) >= 2
-  `).all() as { source: number; target: number; shared_dependencies: string }[];
+  `);
 
-  const parsedEdges = edges.map(edge => ({
+  const edges = edgesResult.rows.map(edge => ({
     source: edge.source,
     target: edge.target,
     shared_dependencies: edge.shared_dependencies.split(',')
@@ -439,51 +487,49 @@ export function getDependencyGraph(): {
 
   return {
     nodes,
-    edges: parsedEdges
+    edges
   };
 }
 
 /**
  * Get top servers by stars
  */
-export function getTopServers(limit: number = 10): Server[] {
-  const database = getDb();
-  const stmt = database.prepare(`
+export async function getTopServers(limit: number = 10): Promise<Server[]> {
+  const result = await queryWithRetry<Server>(`
     SELECT * FROM server
     ORDER BY stars DESC
-    LIMIT ?
-  `);
-  return stmt.all(limit) as Server[];
+    LIMIT $1
+  `, [limit]);
+
+  return result.rows;
 }
 
 /**
  * Get total count for pagination
  */
-export function getTotalServersCount(hostType?: HostType, riskLevel?: RiskLevel): number {
-  const database = getDb();
-
+export async function getTotalServersCount(hostType?: HostType, riskLevel?: RiskLevel): Promise<number> {
   let query = 'SELECT COUNT(*) as count FROM server WHERE 1=1';
   const params: (string | number)[] = [];
+  let paramCount = 1;
 
   if (hostType) {
-    query += ' AND host_type = ?';
+    query += ` AND host_type = $${paramCount++}`;
     params.push(hostType);
   }
 
   if (riskLevel) {
-    query += ' AND risk_level = ?';
+    query += ` AND risk_level = $${paramCount++}`;
     params.push(riskLevel);
   }
 
-  const stmt = database.prepare(query);
-  const result = stmt.get(...params) as { count: number };
-  return result.count;
+  const result = await queryWithRetry<{ count: string }>(query, params);
+  return parseInt(result.rows[0].count);
 }
 
 /**
  * Get social posts with filters
  */
-export function getSocialPosts(
+export async function getSocialPosts(
   limit: number = 50,
   offset: number = 0,
   filters?: {
@@ -492,43 +538,42 @@ export function getSocialPosts(
     sentiment?: SentimentScore;
     minScore?: number;
   }
-): SocialPost[] {
-  const database = getDb();
-
+): Promise<SocialPost[]> {
   let query = 'SELECT * FROM social_posts WHERE 1=1';
   const params: (string | number)[] = [];
+  let paramCount = 1;
 
   if (filters?.platform) {
-    query += ' AND platform = ?';
+    query += ` AND platform = $${paramCount++}`;
     params.push(filters.platform);
   }
 
   if (filters?.category) {
-    query += ' AND category = ?';
+    query += ` AND category = $${paramCount++}`;
     params.push(filters.category);
   }
 
   if (filters?.sentiment) {
-    query += ' AND sentiment = ?';
+    query += ` AND sentiment = $${paramCount++}`;
     params.push(filters.sentiment);
   }
 
   if (filters?.minScore !== undefined) {
-    query += ' AND score >= ?';
+    query += ` AND score >= $${paramCount++}`;
     params.push(filters.minScore);
   }
 
-  query += ' ORDER BY platform_created_at DESC LIMIT ? OFFSET ?';
+  query += ` ORDER BY platform_created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
   params.push(limit, offset);
 
-  const stmt = database.prepare(query);
-  return stmt.all(...params) as SocialPost[];
+  const result = await queryWithRetry<SocialPost>(query, params);
+  return result.rows;
 }
 
 /**
  * Get videos with filters
  */
-export function getVideos(
+export async function getVideos(
   limit: number = 50,
   offset: number = 0,
   filters?: {
@@ -537,43 +582,42 @@ export function getVideos(
     minViews?: number;
     minEducationalValue?: number;
   }
-): Video[] {
-  const database = getDb();
-
+): Promise<Video[]> {
   let query = 'SELECT * FROM videos WHERE 1=1';
   const params: (string | number)[] = [];
+  let paramCount = 1;
 
   if (filters?.platform) {
-    query += ' AND platform = ?';
+    query += ` AND platform = $${paramCount++}`;
     params.push(filters.platform);
   }
 
   if (filters?.category) {
-    query += ' AND category = ?';
+    query += ` AND category = $${paramCount++}`;
     params.push(filters.category);
   }
 
   if (filters?.minViews !== undefined) {
-    query += ' AND view_count >= ?';
+    query += ` AND view_count >= $${paramCount++}`;
     params.push(filters.minViews);
   }
 
   if (filters?.minEducationalValue !== undefined) {
-    query += ' AND educational_value >= ?';
+    query += ` AND educational_value >= $${paramCount++}`;
     params.push(filters.minEducationalValue);
   }
 
-  query += ' ORDER BY published_at DESC LIMIT ? OFFSET ?';
+  query += ` ORDER BY published_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
   params.push(limit, offset);
 
-  const stmt = database.prepare(query);
-  return stmt.all(...params) as Video[];
+  const result = await queryWithRetry<Video>(query, params);
+  return result.rows;
 }
 
 /**
  * Get articles with filters
  */
-export function getArticles(
+export async function getArticles(
   limit: number = 50,
   offset: number = 0,
   filters?: {
@@ -581,95 +625,103 @@ export function getArticles(
     category?: ContentCategory;
     minReadingTime?: number;
   }
-): Article[] {
-  const database = getDb();
-
+): Promise<Article[]> {
   let query = 'SELECT * FROM articles WHERE 1=1';
   const params: (string | number)[] = [];
+  let paramCount = 1;
 
   if (filters?.platform) {
-    query += ' AND platform = ?';
+    query += ` AND platform = $${paramCount++}`;
     params.push(filters.platform);
   }
 
   if (filters?.category) {
-    query += ' AND category = ?';
+    query += ` AND category = $${paramCount++}`;
     params.push(filters.category);
   }
 
   if (filters?.minReadingTime !== undefined) {
-    query += ' AND reading_time_minutes >= ?';
+    query += ` AND reading_time_minutes >= $${paramCount++}`;
     params.push(filters.minReadingTime);
   }
 
-  query += ' ORDER BY published_at DESC LIMIT ? OFFSET ?';
+  query += ` ORDER BY published_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
   params.push(limit, offset);
 
-  const stmt = database.prepare(query);
-  return stmt.all(...params) as Article[];
+  const result = await queryWithRetry<Article>(query, params);
+  return result.rows;
 }
 
 /**
  * Get trending social media content
  */
-export function getTrendingContent(days: number = 7, minScore: number = 50): {
+export async function getTrendingContent(days: number = 7, minScore: number = 50): Promise<{
   posts: SocialPost[];
   videos: Video[];
   articles: Article[];
-} {
-  const database = getDb();
-
+}> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
   const cutoffIso = cutoffDate.toISOString();
 
-  // Get trending posts
-  const postsStmt = database.prepare(`
-    SELECT * FROM social_posts
-    WHERE platform_created_at >= ? AND score >= ?
-    ORDER BY score DESC
-    LIMIT 20
-  `);
-  const posts = postsStmt.all(cutoffIso, minScore) as SocialPost[];
+  // Get trending posts, videos, and articles in parallel
+  const [postsResult, videosResult, articlesResult] = await Promise.all([
+    queryWithRetry<SocialPost>(`
+      SELECT * FROM social_posts
+      WHERE platform_created_at >= $1 AND score >= $2
+      ORDER BY score DESC
+      LIMIT 20
+    `, [cutoffIso, minScore]),
 
-  // Get trending videos
-  const videosStmt = database.prepare(`
-    SELECT * FROM videos
-    WHERE published_at >= ? AND view_count >= ?
-    ORDER BY view_count DESC
-    LIMIT 20
-  `);
-  const videos = videosStmt.all(cutoffIso, minScore) as Video[];
+    queryWithRetry<Video>(`
+      SELECT * FROM videos
+      WHERE published_at >= $1 AND view_count >= $2
+      ORDER BY view_count DESC
+      LIMIT 20
+    `, [cutoffIso, minScore]),
 
-  // Get trending articles
-  const articlesStmt = database.prepare(`
-    SELECT * FROM articles
-    WHERE published_at >= ? AND like_count >= ?
-    ORDER BY like_count DESC
-    LIMIT 20
-  `);
-  const articles = articlesStmt.all(cutoffIso, minScore) as Article[];
+    queryWithRetry<Article>(`
+      SELECT * FROM articles
+      WHERE published_at >= $1 AND like_count >= $2
+      ORDER BY like_count DESC
+      LIMIT 20
+    `, [cutoffIso, minScore])
+  ]);
 
-  return { posts, videos, articles };
+  return {
+    posts: postsResult.rows,
+    videos: videosResult.rows,
+    articles: articlesResult.rows
+  };
 }
 
 /**
  * Get total counts for social media content
  */
-export function getSocialContentCounts(): {
+export async function getSocialContentCounts(): Promise<{
   posts: number;
   videos: number;
   articles: number;
-} {
-  const database = getDb();
-
-  const postsCount = database.prepare('SELECT COUNT(*) as count FROM social_posts').get() as { count: number };
-  const videosCount = database.prepare('SELECT COUNT(*) as count FROM videos').get() as { count: number };
-  const articlesCount = database.prepare('SELECT COUNT(*) as count FROM articles').get() as { count: number };
+}> {
+  const [postsResult, videosResult, articlesResult] = await Promise.all([
+    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM social_posts'),
+    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM videos'),
+    queryWithRetry<{ count: string }>('SELECT COUNT(*) as count FROM articles')
+  ]);
 
   return {
-    posts: postsCount.count,
-    videos: videosCount.count,
-    articles: articlesCount.count,
+    posts: parseInt(postsResult.rows[0].count),
+    videos: parseInt(videosResult.rows[0].count),
+    articles: parseInt(articlesResult.rows[0].count),
   };
+}
+
+/**
+ * Close the database pool (useful for cleanup)
+ */
+export async function closePool(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
 }

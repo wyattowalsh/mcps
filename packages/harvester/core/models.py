@@ -9,7 +9,31 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlmodel import Field, JSON, SQLModel
+
+
+def get_json_column():
+    """Get the appropriate JSON column type based on database type.
+
+    Returns JSONB for PostgreSQL (faster, indexable) and JSON for SQLite.
+    This is determined at import time based on the database URL.
+    """
+    try:
+        from packages.harvester.settings import settings
+
+        if settings.is_postgresql:
+            return JSONB
+        else:
+            return JSON
+    except Exception:
+        # Default to JSON if settings not available
+        return JSON
+
+
+# Convenience reference for models
+JSONColumn = get_json_column()
 
 
 # --- Enums & Constants ---
