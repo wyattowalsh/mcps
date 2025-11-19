@@ -1,7 +1,9 @@
 #!/bin/bash
 # Batch convert all remaining RST files to MyST markdown
 
-cd /home/user/mcps/docs/source
+# Change to the 'source' directory relative to the script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/source"
 
 # Convert all RST files in subdirectories by creating stub MD files
 for rstfile in user-guide/*.rst developer-guide/*.rst api/*.rst; do
