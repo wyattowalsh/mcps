@@ -1,0 +1,54 @@
+/* Custom CSS for MCPS Documentation */
+
+/* Custom accent color */
+:root {
+    --mcps-primary: #6a9fb5;
+    --mcps-primary-dark: #557f96;
+}
+
+/* Code blocks */
+.highlight {
+    border-radius: 4px;
+}
+
+/* Admonitions */
+.admonition {
+    border-radius: 4px;
+}
+
+/* Logo styling */
+.sidebar-logo img {
+    max-height: 60px;
+}
+
+/* Table styling */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+table th {
+    background-color: var(--mcps-primary);
+    color: white;
+}
+
+/* Link styling */
+a {
+    color: var(--mcps-primary);
+}
+
+a:hover {
+    color: var(--mcps-primary-dark);
+}
+
+/* Code inline */
+code {
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+}
+
+/* Search box */
+.search-input {
+    border-radius: 4px;
+}

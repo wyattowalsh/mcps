@@ -1,0 +1,76 @@
+name: Question / Support
+description: Ask a question about MCPS usage or functionality
+title: "[QUESTION] "
+labels: ["question"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about MCPS? We're here to help!
+
+        **Tip:** For general discussions and questions, consider using [GitHub Discussions](https://github.com/your-org/mcps/discussions) instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: "How do I...?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide context about what you're trying to do
+      placeholder: |
+        I'm trying to:
+        - Environment: ...
+        - Version: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: attempts
+    attributes:
+      label: What have you tried?
+      description: What approaches have you already tested?
+      placeholder: |
+        - I tried...
+        - I checked the docs for...
+    validations:
+      required: false
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code or Configuration
+      description: Include relevant code, commands, or configuration
+      render: python
+      placeholder: "Paste your code here..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: System and version details
+      value: |
+        - OS:
+        - Python version:
+        - MCPS version:
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Resources
+      description: Links to related docs, issues, or discussions
+      placeholder: "See also: docs/..., #123, discussions/..."
+    validations:
+      required: false

@@ -451,6 +451,327 @@ async def _show_status() -> None:
         await close_db()
 
 
+@app.command()
+def refresh(
+    url: str = typer.Option(
+        ...,
+        "--url",
+        "-u",
+        help="Primary URL of the server to refresh",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Refresh a specific server by re-harvesting its data.
+
+    This command re-harvests a server from its source and updates all
+    related entities (tools, resources, etc.).
+
+    Examples:
+        # Refresh a GitHub server
+        python -m packages.harvester.cli refresh --url https://github.com/owner/repo
+    """
+    configure_logging(log_level)
+    logger.info(f"Refreshing server: {url}")
+
+    try:
+        asyncio.run(_run_refresh(url))
+    except Exception as e:
+        logger.error(f"Refresh failed: {e}")
+        sys.exit(1)
+
+
+async def _run_refresh(url: str) -> None:
+    """Async implementation of refresh command.
+
+    Args:
+        url: Primary URL of the server to refresh
+    """
+    from packages.harvester.core.updater import ServerUpdater, UpdateError
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            updater = ServerUpdater(session)
+            server = await updater.refresh_server(url)
+
+            if server:
+                logger.success(f"Successfully refreshed server: {server.name}")
+                typer.echo(f"\nServer: {server.name}")
+                typer.echo(f"URL: {server.primary_url}")
+                typer.echo(f"Last indexed: {server.last_indexed_at}")
+            else:
+                logger.error(f"Server with URL {url} not found")
+                sys.exit(1)
+
+    except UpdateError as e:
+        logger.error(f"Error refreshing server: {e}")
+        sys.exit(1)
+    finally:
+        await close_db()
+
+
+@app.command()
+def update_health(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Recalculate health scores for all servers.
+
+    Health scores are calculated based on:
+    - Recent activity (releases, commits)
+    - Community engagement (stars, forks)
+    - Documentation quality (README, description)
+    - Issue management
+
+    Examples:
+        python -m packages.harvester.cli update-health
+    """
+    configure_logging(log_level)
+    logger.info("Recalculating health scores...")
+
+    try:
+        asyncio.run(_run_update_health())
+    except Exception as e:
+        logger.error(f"Health score update failed: {e}")
+        sys.exit(1)
+
+
+async def _run_update_health() -> None:
+    """Async implementation of update-health command."""
+    from packages.harvester.core.updater import ServerUpdater, UpdateError
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            updater = ServerUpdater(session)
+            count = await updater.update_health_scores()
+            logger.success(f"Updated health scores for {count} servers")
+            typer.echo(f"\nUpdated health scores for {count} servers")
+
+    except UpdateError as e:
+        logger.error(f"Error updating health scores: {e}")
+        sys.exit(1)
+    finally:
+        await close_db()
+
+
+@app.command()
+def update_risk(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Recalculate risk levels for all servers.
+
+    Risk levels are determined by:
+    - Dependency analysis
+    - AST analysis for dangerous patterns
+    - Known vulnerabilities
+    - Community trust signals
+
+    Examples:
+        python -m packages.harvester.cli update-risk
+    """
+    configure_logging(log_level)
+    logger.info("Recalculating risk levels...")
+
+    try:
+        asyncio.run(_run_update_risk())
+    except Exception as e:
+        logger.error(f"Risk level update failed: {e}")
+        sys.exit(1)
+
+
+async def _run_update_risk() -> None:
+    """Async implementation of update-risk command."""
+    from packages.harvester.core.updater import ServerUpdater, UpdateError
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            updater = ServerUpdater(session)
+            count = await updater.update_risk_levels()
+            logger.success(f"Updated risk levels for {count} servers")
+            typer.echo(f"\nUpdated risk levels for {count} servers")
+
+    except UpdateError as e:
+        logger.error(f"Error updating risk levels: {e}")
+        sys.exit(1)
+    finally:
+        await close_db()
+
+
+@app.command()
+def prune(
+    days: int = typer.Option(
+        180,
+        "--days",
+        "-d",
+        help="Number of days of inactivity before pruning",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Remove servers that haven't been updated in X days.
+
+    This helps keep the database clean by removing abandoned or inactive servers.
+
+    Examples:
+        # Prune servers inactive for 180 days
+        python -m packages.harvester.cli prune --days 180
+
+        # Prune servers inactive for 90 days
+        python -m packages.harvester.cli prune --days 90
+    """
+    configure_logging(log_level)
+    logger.info(f"Pruning servers not updated in {days} days...")
+
+    # Confirm action
+    if days < 90:
+        typer.echo(
+            f"\nWARNING: You are about to prune servers inactive for only {days} days."
+        )
+        confirm = typer.confirm("Are you sure you want to continue?")
+        if not confirm:
+            typer.echo("Pruning cancelled.")
+            return
+
+    try:
+        asyncio.run(_run_prune(days))
+    except Exception as e:
+        logger.error(f"Pruning failed: {e}")
+        sys.exit(1)
+
+
+async def _run_prune(days: int) -> None:
+    """Async implementation of prune command.
+
+    Args:
+        days: Number of days of inactivity
+    """
+    from packages.harvester.core.updater import ServerUpdater, UpdateError
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            updater = ServerUpdater(session)
+            count = await updater.prune_stale_servers(days)
+            logger.success(f"Pruned {count} stale servers")
+            typer.echo(f"\nPruned {count} stale servers")
+
+    except UpdateError as e:
+        logger.error(f"Error pruning servers: {e}")
+        sys.exit(1)
+    finally:
+        await close_db()
+
+
+@app.command()
+def stats(
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        "-l",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    ),
+) -> None:
+    """Show detailed database statistics.
+
+    This command displays comprehensive statistics about the MCPS database,
+    including server counts, tool counts, risk distributions, and more.
+
+    Examples:
+        python -m packages.harvester.cli stats
+    """
+    configure_logging(log_level)
+    logger.info("Gathering database statistics...")
+
+    try:
+        asyncio.run(_show_stats())
+    except Exception as e:
+        logger.error(f"Failed to get statistics: {e}")
+        sys.exit(1)
+
+
+async def _show_stats() -> None:
+    """Display detailed database statistics."""
+    from packages.harvester.core.updater import ServerUpdater, UpdateError
+
+    await init_db()
+
+    try:
+        async with async_session_maker() as session:
+            updater = ServerUpdater(session)
+            stats = await updater.get_statistics()
+
+            # Display results
+            typer.echo("\n=== MCPS Database Statistics ===\n")
+
+            typer.echo(f"Total Servers: {stats['total_servers']}")
+            typer.echo("\nServers by Host Type:")
+            typer.echo(f"  GitHub: {stats['servers_github']}")
+            typer.echo(f"  NPM: {stats['servers_npm']}")
+            typer.echo(f"  PyPI: {stats['servers_pypi']}")
+            typer.echo(f"  Docker: {stats['servers_docker']}")
+            typer.echo(f"  HTTP: {stats['servers_http']}")
+
+            typer.echo("\nServers by Risk Level:")
+            typer.echo(f"  Safe: {stats['servers_safe']}")
+            typer.echo(f"  Moderate: {stats['servers_moderate']}")
+            typer.echo(f"  High: {stats['servers_high']}")
+            typer.echo(f"  Critical: {stats['servers_critical']}")
+            typer.echo(f"  Unknown: {stats['servers_unknown']}")
+
+            typer.echo(f"\nTotal Tools: {stats['total_tools']}")
+            typer.echo(f"Total Dependencies: {stats['total_dependencies']}")
+            typer.echo(f"Total Releases: {stats['total_releases']}")
+            typer.echo(f"Total Contributors: {stats['total_contributors']}")
+
+            typer.echo(f"\nAverage Health Score: {stats['avg_health_score']}")
+
+            typer.echo("\nTop Servers by Stars:")
+            for server in stats['top_servers']:
+                typer.echo(f"  {server['name']}: {server['stars']} stars")
+
+            typer.echo("\nRecently Updated:")
+            for server in stats['recently_updated']:
+                typer.echo(f"  {server['name']} - {server['last_indexed']}")
+
+            typer.echo("\nProcessing Status:")
+            typer.echo(f"  Pending: {stats['processing_pending']}")
+            typer.echo(f"  Processing: {stats['processing_processing']}")
+            typer.echo(f"  Completed: {stats['processing_completed']}")
+            typer.echo(f"  Failed: {stats['processing_failed']}")
+            typer.echo(f"  Skipped: {stats['processing_skipped']}")
+            typer.echo()
+
+    except UpdateError as e:
+        logger.error(f"Error gathering statistics: {e}")
+        sys.exit(1)
+    finally:
+        await close_db()
+
+
 def main() -> None:
     """Main entry point for the CLI."""
     app()
