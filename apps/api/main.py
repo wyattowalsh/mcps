@@ -40,6 +40,16 @@ from packages.harvester.models.models import (
     Server,
     Tool,
 )
+from packages.harvester.models.social import (
+    Article,
+    ArticlePlatform,
+    ContentCategory,
+    SentimentScore,
+    SocialPlatform,
+    SocialPost,
+    Video,
+    VideoPlatform,
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -139,6 +149,95 @@ class PruneRequest(BaseModel):
     """Request model for pruning stale servers."""
 
     days: int = Field(180, ge=1, description="Days of inactivity before pruning")
+
+
+class SocialPostResponse(BaseModel):
+    """Response model for social media posts."""
+
+    id: int
+    uuid: str
+    platform: str
+    post_id: str
+    url: str
+    title: Optional[str] = None
+    content: str
+    author: str
+    author_url: Optional[str] = None
+    score: int
+    comment_count: int
+    share_count: int
+    view_count: Optional[int] = None
+    category: Optional[str] = None
+    sentiment: Optional[str] = None
+    language: str
+    mentioned_servers: List[int] = []
+    mentioned_urls: List[str] = []
+    platform_created_at: datetime
+    subreddit: Optional[str] = None  # Reddit-specific
+    twitter_hashtags: List[str] = []  # Twitter-specific
+    relevance_score: Optional[float] = None
+    quality_score: Optional[int] = None
+    created_at: datetime
+
+
+class VideoResponse(BaseModel):
+    """Response model for videos."""
+
+    id: int
+    uuid: str
+    platform: str
+    video_id: str
+    url: str
+    title: str
+    description: str
+    channel: str
+    channel_url: str
+    thumbnail_url: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    language: str
+    view_count: int
+    like_count: int
+    comment_count: int
+    category: Optional[str] = None
+    tags: List[str] = []
+    mentioned_servers: List[int] = []
+    mentioned_urls: List[str] = []
+    has_captions: bool
+    published_at: datetime
+    relevance_score: Optional[float] = None
+    quality_score: Optional[int] = None
+    educational_value: Optional[int] = None
+    created_at: datetime
+
+
+class ArticleResponse(BaseModel):
+    """Response model for articles."""
+
+    id: int
+    uuid: str
+    platform: str
+    article_id: Optional[str] = None
+    url: str
+    title: str
+    subtitle: Optional[str] = None
+    excerpt: Optional[str] = None
+    author: str
+    author_url: Optional[str] = None
+    featured_image: Optional[str] = None
+    category: Optional[str] = None
+    tags: List[str] = []
+    language: str
+    view_count: Optional[int] = None
+    like_count: int
+    comment_count: int
+    reading_time_minutes: Optional[int] = None
+    mentioned_servers: List[int] = []
+    mentioned_urls: List[str] = []
+    published_at: datetime
+    relevance_score: Optional[float] = None
+    quality_score: Optional[int] = None
+    technical_depth: Optional[int] = None
+    created_at: datetime
 
 
 class ToolResponse(BaseModel):
@@ -716,6 +815,375 @@ async def get_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+
+# --- Social Media Endpoints ---
+
+
+@app.get("/social/posts", response_model=List[SocialPostResponse], tags=["Social Media"])
+@limiter.limit("60/minute")
+async def list_social_posts(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
+    platform: Optional[str] = Query(None, description="Filter by platform (reddit, twitter)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    sentiment: Optional[str] = Query(None, description="Filter by sentiment"),
+    min_score: Optional[int] = Query(None, description="Minimum engagement score"),
+    server_id: Optional[int] = Query(None, description="Filter by mentioned server"),
+    session: AsyncSession = Depends(get_session),
+):
+    """List social media posts with optional filters.
+
+    Args:
+        skip: Number of records to skip (pagination)
+        limit: Maximum number of records to return
+        platform: Filter by platform
+        category: Filter by content category
+        sentiment: Filter by sentiment
+        min_score: Minimum engagement score
+        server_id: Filter by mentioned server ID
+        session: Database session
+
+    Returns:
+        List of social posts
+    """
+    logger.info(f"Listing social posts (skip={skip}, limit={limit}, platform={platform})")
+
+    # Build query with filters
+    statement = select(SocialPost)
+
+    if platform:
+        statement = statement.where(SocialPost.platform == platform)
+    if category:
+        statement = statement.where(SocialPost.category == category)
+    if sentiment:
+        statement = statement.where(SocialPost.sentiment == sentiment)
+    if min_score is not None:
+        statement = statement.where(SocialPost.score >= min_score)
+
+    statement = statement.offset(skip).limit(limit).order_by(SocialPost.platform_created_at.desc())
+
+    result = await session.execute(statement)
+    posts = result.scalars().all()
+
+    # Filter by server_id if specified (JSON array contains check)
+    if server_id is not None:
+        posts = [p for p in posts if server_id in (p.mentioned_servers or [])]
+
+    return posts
+
+
+@app.get("/social/posts/{post_id}", response_model=SocialPostResponse, tags=["Social Media"])
+@limiter.limit("100/minute")
+async def get_social_post(
+    post_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Get a specific social media post by ID.
+
+    Args:
+        post_id: Post ID
+        session: Database session
+
+    Returns:
+        Social post details
+
+    Raises:
+        HTTPException: If post not found
+    """
+    logger.info(f"Getting social post {post_id}")
+
+    result = await session.execute(select(SocialPost).where(SocialPost.id == post_id))
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Social post {post_id} not found",
+        )
+
+    return post
+
+
+@app.get("/social/videos", response_model=List[VideoResponse], tags=["Social Media"])
+@limiter.limit("60/minute")
+async def list_videos(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
+    platform: Optional[str] = Query(None, description="Filter by platform (youtube, vimeo)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    min_views: Optional[int] = Query(None, description="Minimum view count"),
+    min_educational_value: Optional[int] = Query(None, description="Minimum educational value score"),
+    server_id: Optional[int] = Query(None, description="Filter by mentioned server"),
+    session: AsyncSession = Depends(get_session),
+):
+    """List videos with optional filters.
+
+    Args:
+        skip: Number of records to skip (pagination)
+        limit: Maximum number of records to return
+        platform: Filter by platform
+        category: Filter by content category
+        min_views: Minimum view count
+        min_educational_value: Minimum educational value score
+        server_id: Filter by mentioned server ID
+        session: Database session
+
+    Returns:
+        List of videos
+    """
+    logger.info(f"Listing videos (skip={skip}, limit={limit}, platform={platform})")
+
+    # Build query with filters
+    statement = select(Video)
+
+    if platform:
+        statement = statement.where(Video.platform == platform)
+    if category:
+        statement = statement.where(Video.category == category)
+    if min_views is not None:
+        statement = statement.where(Video.view_count >= min_views)
+    if min_educational_value is not None:
+        statement = statement.where(Video.educational_value >= min_educational_value)
+
+    statement = statement.offset(skip).limit(limit).order_by(Video.published_at.desc())
+
+    result = await session.execute(statement)
+    videos = result.scalars().all()
+
+    # Filter by server_id if specified
+    if server_id is not None:
+        videos = [v for v in videos if server_id in (v.mentioned_servers or [])]
+
+    return videos
+
+
+@app.get("/social/videos/{video_id}", response_model=VideoResponse, tags=["Social Media"])
+@limiter.limit("100/minute")
+async def get_video(
+    video_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Get a specific video by ID.
+
+    Args:
+        video_id: Video ID
+        session: Database session
+
+    Returns:
+        Video details
+
+    Raises:
+        HTTPException: If video not found
+    """
+    logger.info(f"Getting video {video_id}")
+
+    result = await session.execute(select(Video).where(Video.id == video_id))
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video {video_id} not found",
+        )
+
+    return video
+
+
+@app.get("/social/articles", response_model=List[ArticleResponse], tags=["Social Media"])
+@limiter.limit("60/minute")
+async def list_articles(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
+    platform: Optional[str] = Query(None, description="Filter by platform (medium, dev_to, etc)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    min_reading_time: Optional[int] = Query(None, description="Minimum reading time (minutes)"),
+    server_id: Optional[int] = Query(None, description="Filter by mentioned server"),
+    session: AsyncSession = Depends(get_session),
+):
+    """List articles with optional filters.
+
+    Args:
+        skip: Number of records to skip (pagination)
+        limit: Maximum number of records to return
+        platform: Filter by platform
+        category: Filter by content category
+        min_reading_time: Minimum reading time in minutes
+        server_id: Filter by mentioned server ID
+        session: Database session
+
+    Returns:
+        List of articles
+    """
+    logger.info(f"Listing articles (skip={skip}, limit={limit}, platform={platform})")
+
+    # Build query with filters
+    statement = select(Article)
+
+    if platform:
+        statement = statement.where(Article.platform == platform)
+    if category:
+        statement = statement.where(Article.category == category)
+    if min_reading_time is not None:
+        statement = statement.where(Article.reading_time_minutes >= min_reading_time)
+
+    statement = statement.offset(skip).limit(limit).order_by(Article.published_at.desc())
+
+    result = await session.execute(statement)
+    articles = result.scalars().all()
+
+    # Filter by server_id if specified
+    if server_id is not None:
+        articles = [a for a in articles if server_id in (a.mentioned_servers or [])]
+
+    return articles
+
+
+@app.get("/social/articles/{article_id}", response_model=ArticleResponse, tags=["Social Media"])
+@limiter.limit("100/minute")
+async def get_article(
+    article_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Get a specific article by ID.
+
+    Args:
+        article_id: Article ID
+        session: Database session
+
+    Returns:
+        Article details
+
+    Raises:
+        HTTPException: If article not found
+    """
+    logger.info(f"Getting article {article_id}")
+
+    result = await session.execute(select(Article).where(Article.id == article_id))
+    article = result.scalar_one_or_none()
+
+    if not article:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Article {article_id} not found",
+        )
+
+    return article
+
+
+@app.get("/servers/{server_id}/social", tags=["Social Media"])
+@limiter.limit("60/minute")
+async def get_server_social_content(
+    server_id: int,
+    content_type: Optional[str] = Query(None, description="Filter by type (posts, videos, articles)"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get all social media content mentioning a specific server.
+
+    Args:
+        server_id: Server ID
+        content_type: Optional filter by content type
+        session: Database session
+
+    Returns:
+        Social media content mentioning the server
+
+    Raises:
+        HTTPException: If server not found
+    """
+    logger.info(f"Getting social content for server {server_id}")
+
+    # Verify server exists
+    server_result = await session.execute(select(Server).where(Server.id == server_id))
+    server = server_result.scalar_one_or_none()
+
+    if not server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Server {server_id} not found",
+        )
+
+    result = {"server_id": server_id, "server_name": server.name}
+
+    # Get posts mentioning this server
+    if content_type in (None, "posts"):
+        posts_result = await session.execute(select(SocialPost))
+        posts = posts_result.scalars().all()
+        result["posts"] = [p for p in posts if server_id in (p.mentioned_servers or [])]
+
+    # Get videos mentioning this server
+    if content_type in (None, "videos"):
+        videos_result = await session.execute(select(Video))
+        videos = videos_result.scalars().all()
+        result["videos"] = [v for v in videos if server_id in (v.mentioned_servers or [])]
+
+    # Get articles mentioning this server
+    if content_type in (None, "articles"):
+        articles_result = await session.execute(select(Article))
+        articles = articles_result.scalars().all()
+        result["articles"] = [a for a in articles if server_id in (a.mentioned_servers or [])]
+
+    return result
+
+
+@app.get("/social/trending", tags=["Social Media"])
+@limiter.limit("30/minute")
+async def get_trending_content(
+    days: int = Query(7, ge=1, le=30, description="Look back N days"),
+    min_score: int = Query(50, description="Minimum engagement score"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get trending social media content from the last N days.
+
+    Args:
+        days: Number of days to look back
+        min_score: Minimum engagement score
+        session: Database session
+
+    Returns:
+        Trending posts, videos, and articles
+    """
+    logger.info(f"Getting trending content (last {days} days)")
+
+    from datetime import timedelta
+
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    # Get trending posts
+    posts_statement = (
+        select(SocialPost)
+        .where(
+            and_(
+                SocialPost.platform_created_at >= cutoff_date, SocialPost.score >= min_score
+            )
+        )
+        .order_by(SocialPost.score.desc())
+        .limit(20)
+    )
+    posts_result = await session.execute(posts_statement)
+    posts = posts_result.scalars().all()
+
+    # Get trending videos
+    videos_statement = (
+        select(Video)
+        .where(and_(Video.published_at >= cutoff_date, Video.view_count >= min_score))
+        .order_by(Video.view_count.desc())
+        .limit(20)
+    )
+    videos_result = await session.execute(videos_statement)
+    videos = videos_result.scalars().all()
+
+    # Get trending articles
+    articles_statement = (
+        select(Article)
+        .where(and_(Article.published_at >= cutoff_date, Article.like_count >= min_score))
+        .order_by(Article.like_count.desc())
+        .limit(20)
+    )
+    articles_result = await session.execute(articles_statement)
+    articles = articles_result.scalars().all()
+
+    return {"posts": posts, "videos": videos, "articles": articles, "days": days}
 
 
 # --- Root Endpoint ---

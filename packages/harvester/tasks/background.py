@@ -202,6 +202,17 @@ class BackgroundTaskManager:
         )
         logger.info("Scheduled: Recalculate risk levels (daily at 2:30 AM)")
 
+        # Daily social media harvesting (runs at 4 AM)
+        self.scheduler.add_job(
+            self.harvest_social_media,
+            trigger=CronTrigger(hour=4, minute=0),
+            id="harvest_social_media",
+            name="Harvest social media content",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info("Scheduled: Harvest social media (daily at 4 AM)")
+
     async def auto_refresh_servers(self) -> None:
         """Auto-refresh servers that haven't been updated recently.
 
@@ -321,12 +332,81 @@ class BackgroundTaskManager:
             logger.error(f"Stale server cleanup failed: {e}")
             self.progress.complete_task(task_id, success=False, error=str(e))
 
+    async def harvest_social_media(self) -> None:
+        """Harvest social media content from all configured platforms.
+
+        This task harvests MCP-related content from Reddit, Twitter, and YouTube.
+        """
+        task_id = f"social_harvest_{datetime.utcnow().timestamp()}"
+        logger.info("Starting social media harvest...")
+
+        try:
+            async with async_session_maker() as session:
+                self.progress.start_task(task_id, "Harvest social media", total=3)
+
+                from packages.harvester.adapters.reddit import RedditHarvester
+                from packages.harvester.adapters.twitter import TwitterHarvester
+                from packages.harvester.adapters.youtube import YouTubeHarvester
+
+                total_items = 0
+                errors = []
+
+                # Harvest Reddit
+                try:
+                    logger.info("Harvesting Reddit...")
+                    reddit = RedditHarvester()
+                    result = await reddit.harvest(session)
+                    total_items += result.get("total_posts", 0)
+                    logger.success(f"Reddit: {result['total_posts']} posts harvested")
+                    self.progress.update_progress(task_id, 1)
+                except Exception as e:
+                    logger.error(f"Reddit harvest failed: {e}")
+                    errors.append({"platform": "reddit", "error": str(e)})
+
+                # Harvest Twitter
+                try:
+                    logger.info("Harvesting Twitter...")
+                    twitter = TwitterHarvester()
+                    result = await twitter.harvest(session)
+                    total_items += result.get("total_tweets", 0)
+                    logger.success(f"Twitter: {result['total_tweets']} tweets harvested")
+                    self.progress.update_progress(task_id, 2)
+                except Exception as e:
+                    logger.error(f"Twitter harvest failed: {e}")
+                    errors.append({"platform": "twitter", "error": str(e)})
+
+                # Harvest YouTube
+                try:
+                    logger.info("Harvesting YouTube...")
+                    youtube = YouTubeHarvester()
+                    result = await youtube.harvest(session)
+                    total_items += result.get("total_videos", 0)
+                    logger.success(f"YouTube: {result['total_videos']} videos harvested")
+                    self.progress.update_progress(task_id, 3)
+                except Exception as e:
+                    logger.error(f"YouTube harvest failed: {e}")
+                    errors.append({"platform": "youtube", "error": str(e)})
+
+                if errors:
+                    error_msg = f"{len(errors)} platform(s) failed"
+                    logger.warning(error_msg)
+                    self.progress.complete_task(task_id, success=False, error=error_msg)
+                else:
+                    logger.success(
+                        f"Social media harvest completed: {total_items} items harvested"
+                    )
+                    self.progress.complete_task(task_id)
+
+        except Exception as e:
+            logger.error(f"Social media harvest task failed: {e}")
+            self.progress.complete_task(task_id, success=False, error=str(e))
+
     async def run_task_now(self, task_name: str) -> None:
         """Run a scheduled task immediately.
 
         Args:
             task_name: Name of the task to run
-                (auto_refresh, health_scores, risk_levels, cleanup_stale)
+                (auto_refresh, health_scores, risk_levels, cleanup_stale, social_media)
 
         Raises:
             ValueError: If task name is invalid
@@ -341,6 +421,8 @@ class BackgroundTaskManager:
             await self.recalculate_risk_levels()
         elif task_name == "cleanup_stale":
             await self.cleanup_stale_servers()
+        elif task_name == "social_media":
+            await self.harvest_social_media()
         else:
             raise ValueError(f"Unknown task: {task_name}")
 
