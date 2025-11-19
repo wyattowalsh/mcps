@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Search, TrendingUp, Network } from 'lucide-react';
-import { getStats, getTopServers } from '@/lib/db';
+import { Search, TrendingUp, Network, Rss } from 'lucide-react';
+import { getStats, getTopServers, getSocialContentCounts } from '@/lib/db';
 import { StatsCards } from '@/components/stats-cards';
 import { ServerCard } from '@/components/server-card';
 
@@ -11,6 +11,7 @@ export default function Home() {
   // Fetch data using Server Components (direct SQLite access)
   const stats = getStats();
   const topServers = getTopServers(6);
+  const socialCounts = getSocialContentCounts();
 
   return (
     <div className="min-h-screen">
@@ -81,7 +82,7 @@ export default function Home() {
         </section>
 
         {/* Quick Links */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Link
             href="/servers?risk_level=safe"
             className="p-6 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-green-500 transition-colors"
@@ -124,6 +125,24 @@ export default function Home() {
             </p>
             <div className="mt-4 text-[var(--primary)] font-semibold">
               View Visualization →
+            </div>
+          </Link>
+
+          <Link
+            href="/social"
+            className="p-6 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-orange-500 transition-colors"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Rss className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Social Media
+              </h3>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Community discussions, videos, and articles about MCP
+            </p>
+            <div className="mt-4 text-2xl font-bold text-orange-600 dark:text-orange-400">
+              {socialCounts.posts + socialCounts.videos + socialCounts.articles}
             </div>
           </Link>
         </section>

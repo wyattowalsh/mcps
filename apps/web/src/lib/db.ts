@@ -116,6 +116,100 @@ export interface DependencyGraphEdge {
   shared_dependencies: string[];
 }
 
+// Social Media Types
+export type SocialPlatform = 'reddit' | 'twitter' | 'discord' | 'slack' | 'hacker_news' | 'stack_overflow';
+export type VideoPlatform = 'youtube' | 'vimeo' | 'twitch';
+export type ArticlePlatform = 'medium' | 'dev_to' | 'hashnode' | 'personal_blog' | 'substack';
+export type ContentCategory = 'tutorial' | 'news' | 'discussion' | 'announcement' | 'question' | 'showcase' | 'best_practices' | 'case_study' | 'review' | 'other';
+export type SentimentScore = 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
+
+export interface SocialPost {
+  id: number;
+  uuid: string;
+  platform: SocialPlatform;
+  post_id: string;
+  url: string;
+  title: string | null;
+  content: string;
+  author: string;
+  author_url: string | null;
+  score: number;
+  comment_count: number;
+  share_count: number;
+  view_count: number | null;
+  category: ContentCategory | null;
+  sentiment: SentimentScore | null;
+  language: string;
+  mentioned_servers: string; // JSON string
+  mentioned_urls: string; // JSON string
+  platform_created_at: string;
+  subreddit: string | null;
+  reddit_flair: string | null;
+  twitter_hashtags: string; // JSON string
+  twitter_mentions: string; // JSON string
+  relevance_score: number | null;
+  quality_score: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Video {
+  id: number;
+  uuid: string;
+  platform: VideoPlatform;
+  video_id: string;
+  url: string;
+  title: string;
+  description: string;
+  channel: string;
+  channel_url: string;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  language: string;
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  category: ContentCategory | null;
+  tags: string; // JSON string
+  mentioned_servers: string; // JSON string
+  mentioned_urls: string; // JSON string
+  has_captions: boolean;
+  published_at: string;
+  relevance_score: number | null;
+  quality_score: number | null;
+  educational_value: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Article {
+  id: number;
+  uuid: string;
+  platform: ArticlePlatform;
+  article_id: string | null;
+  url: string;
+  title: string;
+  subtitle: string | null;
+  excerpt: string | null;
+  author: string;
+  author_url: string | null;
+  featured_image: string | null;
+  category: ContentCategory | null;
+  tags: string; // JSON string
+  language: string;
+  view_count: number | null;
+  like_count: number;
+  comment_count: number;
+  reading_time_minutes: number | null;
+  mentioned_servers: string; // JSON string
+  mentioned_urls: string; // JSON string
+  published_at: string;
+  relevance_score: number | null;
+  quality_score: number | null;
+  technical_depth: number | null;
+  created_at: string;
+}
+
 // Database connection with readonly mode and WAL enabled
 let db: Database.Database | null = null;
 
@@ -384,4 +478,198 @@ export function getTotalServersCount(hostType?: HostType, riskLevel?: RiskLevel)
   const stmt = database.prepare(query);
   const result = stmt.get(...params) as { count: number };
   return result.count;
+}
+
+/**
+ * Get social posts with filters
+ */
+export function getSocialPosts(
+  limit: number = 50,
+  offset: number = 0,
+  filters?: {
+    platform?: SocialPlatform;
+    category?: ContentCategory;
+    sentiment?: SentimentScore;
+    minScore?: number;
+  }
+): SocialPost[] {
+  const database = getDb();
+
+  let query = 'SELECT * FROM social_posts WHERE 1=1';
+  const params: (string | number)[] = [];
+
+  if (filters?.platform) {
+    query += ' AND platform = ?';
+    params.push(filters.platform);
+  }
+
+  if (filters?.category) {
+    query += ' AND category = ?';
+    params.push(filters.category);
+  }
+
+  if (filters?.sentiment) {
+    query += ' AND sentiment = ?';
+    params.push(filters.sentiment);
+  }
+
+  if (filters?.minScore !== undefined) {
+    query += ' AND score >= ?';
+    params.push(filters.minScore);
+  }
+
+  query += ' ORDER BY platform_created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const stmt = database.prepare(query);
+  return stmt.all(...params) as SocialPost[];
+}
+
+/**
+ * Get videos with filters
+ */
+export function getVideos(
+  limit: number = 50,
+  offset: number = 0,
+  filters?: {
+    platform?: VideoPlatform;
+    category?: ContentCategory;
+    minViews?: number;
+    minEducationalValue?: number;
+  }
+): Video[] {
+  const database = getDb();
+
+  let query = 'SELECT * FROM videos WHERE 1=1';
+  const params: (string | number)[] = [];
+
+  if (filters?.platform) {
+    query += ' AND platform = ?';
+    params.push(filters.platform);
+  }
+
+  if (filters?.category) {
+    query += ' AND category = ?';
+    params.push(filters.category);
+  }
+
+  if (filters?.minViews !== undefined) {
+    query += ' AND view_count >= ?';
+    params.push(filters.minViews);
+  }
+
+  if (filters?.minEducationalValue !== undefined) {
+    query += ' AND educational_value >= ?';
+    params.push(filters.minEducationalValue);
+  }
+
+  query += ' ORDER BY published_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const stmt = database.prepare(query);
+  return stmt.all(...params) as Video[];
+}
+
+/**
+ * Get articles with filters
+ */
+export function getArticles(
+  limit: number = 50,
+  offset: number = 0,
+  filters?: {
+    platform?: ArticlePlatform;
+    category?: ContentCategory;
+    minReadingTime?: number;
+  }
+): Article[] {
+  const database = getDb();
+
+  let query = 'SELECT * FROM articles WHERE 1=1';
+  const params: (string | number)[] = [];
+
+  if (filters?.platform) {
+    query += ' AND platform = ?';
+    params.push(filters.platform);
+  }
+
+  if (filters?.category) {
+    query += ' AND category = ?';
+    params.push(filters.category);
+  }
+
+  if (filters?.minReadingTime !== undefined) {
+    query += ' AND reading_time_minutes >= ?';
+    params.push(filters.minReadingTime);
+  }
+
+  query += ' ORDER BY published_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const stmt = database.prepare(query);
+  return stmt.all(...params) as Article[];
+}
+
+/**
+ * Get trending social media content
+ */
+export function getTrendingContent(days: number = 7, minScore: number = 50): {
+  posts: SocialPost[];
+  videos: Video[];
+  articles: Article[];
+} {
+  const database = getDb();
+
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoffIso = cutoffDate.toISOString();
+
+  // Get trending posts
+  const postsStmt = database.prepare(`
+    SELECT * FROM social_posts
+    WHERE platform_created_at >= ? AND score >= ?
+    ORDER BY score DESC
+    LIMIT 20
+  `);
+  const posts = postsStmt.all(cutoffIso, minScore) as SocialPost[];
+
+  // Get trending videos
+  const videosStmt = database.prepare(`
+    SELECT * FROM videos
+    WHERE published_at >= ? AND view_count >= ?
+    ORDER BY view_count DESC
+    LIMIT 20
+  `);
+  const videos = videosStmt.all(cutoffIso, minScore) as Video[];
+
+  // Get trending articles
+  const articlesStmt = database.prepare(`
+    SELECT * FROM articles
+    WHERE published_at >= ? AND like_count >= ?
+    ORDER BY like_count DESC
+    LIMIT 20
+  `);
+  const articles = articlesStmt.all(cutoffIso, minScore) as Article[];
+
+  return { posts, videos, articles };
+}
+
+/**
+ * Get total counts for social media content
+ */
+export function getSocialContentCounts(): {
+  posts: number;
+  videos: number;
+  articles: number;
+} {
+  const database = getDb();
+
+  const postsCount = database.prepare('SELECT COUNT(*) as count FROM social_posts').get() as { count: number };
+  const videosCount = database.prepare('SELECT COUNT(*) as count FROM videos').get() as { count: number };
+  const articlesCount = database.prepare('SELECT COUNT(*) as count FROM articles').get() as { count: number };
+
+  return {
+    posts: postsCount.count,
+    videos: videosCount.count,
+    articles: articlesCount.count,
+  };
 }
