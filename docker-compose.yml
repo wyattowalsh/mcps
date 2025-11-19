@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # MCPS API Service - FastAPI backend
+  # =============================================================================
+  mcps-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mcps-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent data storage
+      - mcps-data:/app/data
+      # Logs directory
+      - mcps-logs:/app/logs
+    environment:
+      # Database configuration
+      - DATABASE_URL=sqlite:///app/data/mcps.db
+      - SQLITE_JOURNAL_MODE=WAL
+
+      # API configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_WORKERS=4
+
+      # Logging configuration
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+
+      # Feature flags
+      - ENABLE_CORS=true
+      - ENABLE_OPENAPI=true
+
+      # Security
+      - SECRET_KEY=${SECRET_KEY:-changeme-in-production}
+
+      # Optional: GitHub token for higher rate limits
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+
+      # Optional: OpenAI API key for embeddings
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - mcps-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.mcps.service=api"
+      - "com.mcps.description=FastAPI backend for MCPS"
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+      "
+
+  # =============================================================================
+  # MCPS Web Service - Next.js frontend
+  # =============================================================================
+  mcps-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mcps-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Share database with API (read-only access)
+      - mcps-data:/app/data:ro
+    environment:
+      # Next.js configuration
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+
+      # Database configuration (read-only)
+      - DATABASE_PATH=/app/data/mcps.db
+
+      # API endpoint
+      - NEXT_PUBLIC_API_URL=http://mcps-api:8000
+      - API_URL=http://mcps-api:8000
+    networks:
+      - mcps-network
+    depends_on:
+      mcps-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.mcps.service=web"
+      - "com.mcps.description=Next.js frontend for MCPS"
+    working_dir: /app/apps/web
+    command: ["npm", "start", "--", "--port", "3000"]
+
+  # =============================================================================
+  # Optional: Harvester Service - Scheduled data ingestion
+  # =============================================================================
+  mcps-harvester:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mcps-harvester
+    restart: "no"  # Run manually or via cron
+    volumes:
+      - mcps-data:/app/data
+      - mcps-logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite:///app/data/mcps.db
+      - LOG_LEVEL=INFO
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - mcps-network
+    depends_on:
+      mcps-api:
+        condition: service_healthy
+    labels:
+      - "com.mcps.service=harvester"
+      - "com.mcps.description=ETL pipeline for MCPS data ingestion"
+    profiles:
+      - harvester  # Only start when explicitly requested
+    command: ["python", "-m", "packages.harvester.cli", "ingest", "--strategy", "auto", "--target", "all"]
+
+# =============================================================================
+# Volumes - Persistent storage
+# =============================================================================
+volumes:
+  mcps-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+    labels:
+      - "com.mcps.volume=data"
+      - "com.mcps.description=SQLite database and exports"
+
+  mcps-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+    labels:
+      - "com.mcps.volume=logs"
+      - "com.mcps.description=Application logs"
+
+# =============================================================================
+# Networks - Service communication
+# =============================================================================
+networks:
+  mcps-network:
+    driver: bridge
+    labels:
+      - "com.mcps.network=main"
+      - "com.mcps.description=Internal network for MCPS services"
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
