@@ -47,13 +47,6 @@ export function ServerComparison({
     useState<Server[]>(initialServers)
   const [showAddDialog, setShowAddDialog] = useState(false)
 
-  const addServer = (server: Server) => {
-    if (selectedServers.length < maxServers) {
-      setSelectedServers([...selectedServers, server])
-      setShowAddDialog(false)
-    }
-  }
-
   const removeServer = (serverId: number) => {
     setSelectedServers(selectedServers.filter((s) => s.id !== serverId))
   }
