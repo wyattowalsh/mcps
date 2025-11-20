@@ -18,25 +18,26 @@ import { TrendingSection } from '@/components/trending-section';
 export const dynamic = 'force-dynamic';
 
 interface SocialPageProps {
-  searchParams: {
+  searchParams: Promise<{
     platform?: string;
     category?: string;
     sentiment?: string;
     type?: 'posts' | 'videos' | 'articles' | 'all';
     page?: string;
-  };
+  }>;
 }
 
 export default async function SocialPage({ searchParams }: SocialPageProps) {
-  const page = parseInt(searchParams.page || '1', 10);
+  const params = await searchParams;
+  const page = parseInt(params.page || '1', 10);
   const limit = 12;
   const offset = (page - 1) * limit;
 
   // Get filters from search params
-  const platformFilter = searchParams.platform as SocialPlatform | VideoPlatform | undefined;
-  const categoryFilter = searchParams.category as ContentCategory | undefined;
-  const sentimentFilter = searchParams.sentiment as SentimentScore | undefined;
-  const typeFilter = searchParams.type || 'all';
+  const platformFilter = params.platform as SocialPlatform | VideoPlatform | undefined;
+  const categoryFilter = params.category as ContentCategory | undefined;
+  const sentimentFilter = params.sentiment as SentimentScore | undefined;
+  const typeFilter = params.type || 'all';
 
   // Fetch data based on type filter
   let posts = typeFilter === 'all' || typeFilter === 'posts'
@@ -291,7 +292,7 @@ export default async function SocialPage({ searchParams }: SocialPageProps) {
             <div className="flex items-center justify-center gap-4 mt-8">
               {page > 1 && (
                 <Link
-                  href={`/social?${new URLSearchParams({ ...searchParams, page: (page - 1).toString() }).toString()}`}
+                  href={`/social?${new URLSearchParams({ ...params, page: (page - 1).toString() }).toString()}`}
                   className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   Previous
@@ -302,7 +303,7 @@ export default async function SocialPage({ searchParams }: SocialPageProps) {
               </span>
               {(posts.length === limit || videos.length === limit || articles.length === limit) && (
                 <Link
-                  href={`/social?${new URLSearchParams({ ...searchParams, page: (page + 1).toString() }).toString()}`}
+                  href={`/social?${new URLSearchParams({ ...params, page: (page + 1).toString() }).toString()}`}
                   className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   Next
