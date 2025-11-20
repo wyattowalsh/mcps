@@ -1,0 +1,136 @@
+version: '3.8'
+
+# ============================================================================
+# MCPS Supabase-Only Configuration
+# ============================================================================
+# Simplified deployment using ONLY Supabase infrastructure:
+# - Database: Supabase PostgreSQL
+# - Auth: Supabase Auth
+# - Storage: Supabase Storage
+# - Realtime: Supabase Realtime
+# - No local PostgreSQL or Redis needed!
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # FastAPI Backend (connects to Supabase)
+  # ==========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: mcps-api:latest
+    container_name: mcps-api
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      # Environment
+      ENVIRONMENT: production
+      DEBUG: "false"
+
+      # Supabase Configuration (ONLY)
+      USE_SUPABASE: "true"
+      SUPABASE_URL: ${SUPABASE_URL:-https://bgnptdxskntypobizwiv.supabase.co}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:OyqJfRUJMapZxXQp@db.bgnptdxskntypobizwiv.supabase.co:5432/postgres}
+
+      # Cache - Disabled (using Supabase only)
+      CACHE_ENABLED: "false"
+
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_WORKERS: 2
+      SECRET_KEY: ${SECRET_KEY}
+
+      # CORS
+      CORS_ENABLED: "true"
+      CORS_ORIGINS: '["http://localhost:3000","https://bgnptdxskntypobizwiv.supabase.co"]'
+
+      # Logging
+      LOG_LEVEL: INFO
+
+      # Monitoring (Optional)
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - mcps-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # ==========================================================================
+  # Next.js Frontend (connects to Supabase)
+  # ==========================================================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://bgnptdxskntypobizwiv.supabase.co}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    image: mcps-web:latest
+    container_name: mcps-web
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+
+      # Supabase (frontend)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://bgnptdxskntypobizwiv.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # API
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      API_URL: http://api:8000
+
+      # Site
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    networks:
+      - mcps-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+networks:
+  mcps-network:
+    driver: bridge
