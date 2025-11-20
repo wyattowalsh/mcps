@@ -1,6 +1,9 @@
 import { MetadataRoute } from 'next';
 import { getServers } from '@/lib/db';
 
+// Force dynamic since we query the database
+export const dynamic = 'force-dynamic';
+
 /**
  * Generate sitemap for SEO
  * See: https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap

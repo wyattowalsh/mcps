@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Server } from '@/lib/db'
-import ServerCard from './server-card'
+import { ServerCard } from './server-card'
 
 interface RealtimeServersProps {
   initialServers: Server[]

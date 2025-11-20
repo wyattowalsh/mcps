@@ -1,45 +1,46 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { Button } from '@/components/ui/Button';
 
 describe('Button Component', () => {
   it('renders button with children', () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByText('Click me')).toBeInTheDocument();
+    const { getByText } = render(<Button>Click me</Button>);
+    expect(getByText('Click me')).toBeInTheDocument();
   });
 
-  it('handles click events', () => {
+  it('handles click events', async () => {
     const handleClick = vi.fn();
-    render(<Button onClick={handleClick}>Click me</Button>);
+    const { getByText } = render(<Button onClick={handleClick}>Click me</Button>);
 
-    fireEvent.click(screen.getByText('Click me'));
+    await getByText('Click me').click();
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
   it('shows loading state', () => {
-    render(<Button loading>Click me</Button>);
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    const { getByText } = render(<Button loading>Click me</Button>);
+    expect(getByText('Loading...')).toBeInTheDocument();
   });
 
   it('disables button when disabled prop is true', () => {
-    render(<Button disabled>Click me</Button>);
-    const button = screen.getByText('Click me');
+    const { getByText } = render(<Button disabled>Click me</Button>);
+    const button = getByText('Click me');
     expect(button).toBeDisabled();
   });
 
   it('applies correct variant classes', () => {
-    const { rerender } = render(<Button variant="primary">Primary</Button>);
-    expect(screen.getByText('Primary')).toHaveClass('bg-primary');
+    const { rerender, getByText } = render(<Button variant="primary">Primary</Button>);
+    expect(getByText('Primary')).toHaveClass('bg-primary');
 
     rerender(<Button variant="danger">Danger</Button>);
-    expect(screen.getByText('Danger')).toHaveClass('bg-red-600');
+    expect(getByText('Danger')).toHaveClass('bg-red-600');
   });
 
   it('applies correct size classes', () => {
-    const { rerender } = render(<Button size="sm">Small</Button>);
-    expect(screen.getByText('Small')).toHaveClass('px-3', 'py-1.5', 'text-sm');
+    const { rerender, getByText } = render(<Button size="sm">Small</Button>);
+    expect(getByText('Small')).toHaveClass('px-3', 'py-1.5', 'text-sm');
 
     rerender(<Button size="lg">Large</Button>);
-    expect(screen.getByText('Large')).toHaveClass('px-6', 'py-3', 'text-lg');
+    expect(getByText('Large')).toHaveClass('px-6', 'py-3', 'text-lg');
   });
 });

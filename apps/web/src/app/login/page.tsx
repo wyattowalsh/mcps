@@ -54,7 +54,7 @@ export default function LoginPage() {
 
         <div className="mt-8 rounded-lg bg-white dark:bg-gray-800 px-6 py-8 shadow-lg">
           <Auth
-            supabaseClient={supabase}
+            supabaseClient={supabase as any}
             appearance={{
               theme: ThemeSupa,
               variables: {

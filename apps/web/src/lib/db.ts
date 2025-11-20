@@ -210,28 +210,31 @@ export async function getStats(): Promise<DashboardStats> {
   const supabase = await getSupabaseServer()
 
   // Get basic stats
-  const { data: servers } = await supabase.from('server').select('health_score, stars, host_type, risk_level')
+  const { data: servers, error: serversError } = await supabase
+    .from('server')
+    .select('health_score, stars, host_type, risk_level')
+    .returns<Array<{ health_score: number; stars: number; host_type: HostType; risk_level: RiskLevel }>>()
 
   const { count: toolCount } = await supabase.from('tool').select('*', { count: 'exact', head: true })
 
-  if (!servers) {
-    throw new Error('Failed to fetch server stats')
+  if (serversError || !servers) {
+    throw serversError || new Error('Failed to fetch server stats')
   }
 
   const total_servers = servers.length
   const average_health_score = Math.round(
-    servers.reduce((sum, s) => sum + s.health_score, 0) / total_servers
+    servers.reduce((sum: number, s) => sum + s.health_score, 0) / total_servers
   )
-  const total_stars = servers.reduce((sum, s) => sum + s.stars, 0)
+  const total_stars = servers.reduce((sum: number, s) => sum + s.stars, 0)
 
   // Group by host type
-  const servers_by_host_type = servers.reduce((acc, s) => {
+  const servers_by_host_type = servers.reduce((acc: Record<string, number>, s) => {
     acc[s.host_type] = (acc[s.host_type] || 0) + 1
     return acc
   }, {} as Record<HostType, number>)
 
   // Group by risk level
-  const servers_by_risk_level = servers.reduce((acc, s) => {
+  const servers_by_risk_level = servers.reduce((acc: Record<string, number>, s) => {
     acc[s.risk_level] = (acc[s.risk_level] || 0) + 1
     return acc
   }, {} as Record<RiskLevel, number>)
@@ -268,7 +271,7 @@ export async function getDependencyGraph(): Promise<{
   }
 
   // Get dependencies for edge calculation
-  const serverIds = nodes.map(n => n.id)
+  const serverIds = nodes.map((n: DependencyGraphNode) => n.id)
   const { data: dependencies } = await supabase
     .from('dependency')
     .select('server_id, library_name')
@@ -278,7 +281,7 @@ export async function getDependencyGraph(): Promise<{
   const edges: DependencyGraphEdge[] = []
   const depMap = new Map<string, number[]>()
 
-  dependencies?.forEach(dep => {
+  dependencies?.forEach((dep: { server_id: number; library_name: string }) => {
     if (!depMap.has(dep.library_name)) {
       depMap.set(dep.library_name, [])
     }
