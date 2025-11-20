@@ -9,15 +9,26 @@ from alembic import context
 from sqlmodel import SQLModel
 
 # Import settings and models
-from mcps.settings import settings
+from packages.harvester.settings import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override sqlalchemy.url from settings (sync version for migrations)
-sync_db_url = str(settings.database_path.absolute())
-config.set_main_option("sqlalchemy.url", f"sqlite:///{sync_db_url}")
+# Override sqlalchemy.url from settings
+# Convert async URL to sync URL for Alembic migrations
+db_url = settings.db_url
+
+# Convert asyncpg to psycopg2 for sync migrations (PostgreSQL)
+if "postgresql+asyncpg" in db_url:
+    sync_db_url = db_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+# Convert aiosqlite to sqlite for sync migrations (SQLite)
+elif "sqlite+aiosqlite" in db_url:
+    sync_db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
+else:
+    sync_db_url = db_url
+
+config.set_main_option("sqlalchemy.url", sync_db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -27,7 +38,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 # Import all models here to ensure they're registered
-from mcps.models import *  # noqa: F401, F403
+from packages.harvester.models import *  # noqa: F401, F403
 
 target_metadata = SQLModel.metadata
 
@@ -70,23 +81,56 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode (sync for SQLite)."""
+    """Run migrations in 'online' mode.
+
+    Handles both PostgreSQL and SQLite appropriately.
+    """
     from sqlalchemy import engine_from_config
-    
+
+    # Get the configuration section
+    configuration = config.get_section(config.config_ini_section, {})
+
+    # Add PostgreSQL-specific settings if using PostgreSQL
+    if settings.is_postgresql:
+        # Use appropriate pool for PostgreSQL
+        poolclass = pool.QueuePool
+        # Add pool settings
+        configuration.update({
+            "pool_size": "5",
+            "max_overflow": "10",
+            "pool_pre_ping": "True",
+        })
+    else:
+        # Use NullPool for SQLite (single connection)
+        poolclass = pool.NullPool
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+        poolclass=poolclass,
     )
 
     with connectable.connect() as connection:
+        # Add PostgreSQL-specific configuration
+        if settings.is_postgresql:
+            # Set search_path if needed
+            # connection.execute(text("SET search_path TO public"))
+            pass
+
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            # Enable batch mode for SQLite to support ALTER operations
+            render_as_batch=settings.is_sqlite,
+            # Compare types for better migration detection
+            compare_type=True,
+            # Compare server defaults
+            compare_server_default=True,
         )
 
         with context.begin_transaction():
             context.run_migrations()
-    
+
     connectable.dispose()
 
 

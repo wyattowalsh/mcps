@@ -1,0 +1,89 @@
+# MCPS Project Rules for Windsurf AI
+
+## Core Principles
+- This is a knowledge graph system for the MCP ecosystem
+- SQLite-first architecture (no external databases)
+- Monorepo with Python backend + Next.js frontend
+
+## Command Execution Rules
+
+### Python Commands
+- ALWAYS prefix with `uv run`
+- Examples:
+  ```bash
+  uv run python -m packages.harvester.cli ingest
+  uv run alembic upgrade head
+  uv run pytest tests/
+  ```
+
+### Path Preferences
+- USE `pathlib.Path` instead of `os.path`
+- USE absolute paths in configs
+- AVOID relative path strings
+
+## Architecture Boundaries
+
+### Package Isolation
+- `packages/harvester/` = Python ETL engine (NEVER import from apps/web)
+- `apps/web/` = Next.js UI (CAN read from data/ via better-sqlite3)
+- `apps/api/` = FastAPI (when created, for write operations)
+
+### Data Flow
+- Harvester writes → SQLite DB → Web reads (direct) or API (for writes)
+- No circular dependencies between packages
+
+## Database Rules
+
+### Schema Changes
+- NEVER use `.metadata.create_all()` in production
+- ALWAYS use Alembic:
+  1. Edit SQLModel classes
+  2. Run `uv run alembic revision --autogenerate -m "description"`
+  3. Review generated migration
+  4. Run `uv run alembic upgrade head`
+
+### SQLite Optimization
+- Enable WAL mode: `PRAGMA journal_mode = WAL`
+- Use foreign keys: `PRAGMA foreign_keys = ON`
+- JSON columns for lists/dicts (SQLite doesn't support native arrays)
+
+## Security Guidelines
+
+### Static Analysis Only
+- NEVER import/execute downloaded code
+- USE `ast.parse()` for Python inspection
+- USE tree-sitter for JS/TS inspection
+- Flag dangerous patterns: eval, exec, subprocess
+
+### Risk Levels
+- SAFE: Pure logic, no I/O
+- MODERATE: Network or read-only FS
+- HIGH: Shell execution, write FS
+- CRITICAL: Known CVEs or malicious patterns
+
+## Code Style
+
+### Python (PEP 8 + Project Specific)
+- Line length: 100
+- Type hints required
+- Use Pydantic for validation
+- Loguru for logging (not print)
+- Tenacity for retries
+
+### TypeScript
+- Strict mode enabled
+- Server Components preferred
+- Client components only when interactive
+- Use Tailwind 4 CSS variables
+
+## Testing Strategy
+- Unit tests for utilities
+- Integration tests for harvesters
+- E2E tests for critical flows
+- Snapshot tests for data exports
+
+## Error Handling
+- Use Tenacity for network operations
+- Exponential backoff: 2s, 4s, 8s, 16s, 30s
+- Log all failures with context
+- Graceful degradation (partial data > no data)

@@ -97,3 +97,12 @@ Thumbs.db
 
 # Alembic
 alembic/versions/.*.py.swp
+
+# Next.js / Frontend
+.next/
+node_modules/
+out/
+.turbo/
+.swc/
+*.tsbuildinfo
+next-env.d.ts

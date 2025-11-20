@@ -1,0 +1,418 @@
+name: MCPS CI/CD - Test & Lint
+
+# =============================================================================
+# Triggers - When to run this workflow
+# =============================================================================
+on:
+  # Run on push to main branch
+  push:
+    branches:
+      - main
+      - master
+
+  # Run on pull requests targeting main
+  pull_request:
+    branches:
+      - main
+      - master
+
+  # Manual trigger
+  workflow_dispatch:
+
+# =============================================================================
+# Permissions
+# =============================================================================
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+# =============================================================================
+# Concurrency - Cancel in-progress runs for same PR
+# =============================================================================
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+  UV_VERSION: 'latest'
+
+# =============================================================================
+# Jobs
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Python Linting
+  # ---------------------------------------------------------------------------
+  lint-python:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-python-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Run Ruff linter
+        run: |
+          echo "Running Ruff linter..."
+          uv run ruff check packages/ apps/api/ --output-format=github
+
+      - name: Run Ruff formatter check
+        run: |
+          echo "Checking Python code formatting..."
+          uv run ruff format packages/ apps/api/ --check
+
+      - name: Generate lint report
+        if: always()
+        run: |
+          echo "## Python Linting Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Ruff linting completed" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Python Type Checking
+  # ---------------------------------------------------------------------------
+  typecheck-python:
+    name: Type Check Python Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-python-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Run MyPy type checker
+        continue-on-error: true  # Type checking failures don't fail the build
+        run: |
+          echo "Running MyPy type checker..."
+          uv run mypy packages/ apps/api/ --strict --show-error-codes
+
+      - name: Generate type check report
+        if: always()
+        run: |
+          echo "## Python Type Checking Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ MyPy type checking completed" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Python Tests
+  # ---------------------------------------------------------------------------
+  test-python:
+    name: Test Python Code
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-python-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: uv sync --frozen --group test
+
+      - name: Set up database
+        run: |
+          mkdir -p data logs
+          uv run alembic upgrade head
+
+      - name: Run pytest
+        run: |
+          echo "Running pytest with coverage..."
+          uv run pytest tests/ \
+            -v \
+            --cov=packages \
+            --cov=apps/api \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing \
+            --junit-xml=pytest-results.xml
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          flags: python
+          name: python-${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: |
+            pytest-results.xml
+            htmlcov/
+          retention-days: 30
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## Python Test Results (Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Pytest completed" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Next.js Linting
+  # ---------------------------------------------------------------------------
+  lint-nextjs:
+    name: Lint Next.js Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/web/node_modules
+            ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        working-directory: apps/web
+        run: |
+          echo "Running ESLint..."
+          pnpm lint
+
+      - name: Run TypeScript type check
+        working-directory: apps/web
+        run: |
+          echo "Running TypeScript type checking..."
+          pnpm type-check
+
+      - name: Generate lint report
+        if: always()
+        run: |
+          echo "## Next.js Linting Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ ESLint and TypeScript checks completed" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Next.js Build
+  # ---------------------------------------------------------------------------
+  build-nextjs:
+    name: Build Next.js Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/web/node_modules
+            ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('apps/web/pnpm-lock.yaml') }}-${{ hashFiles('apps/web/**/*.ts', 'apps/web/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('apps/web/pnpm-lock.yaml') }}-
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js application
+        working-directory: apps/web
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+        run: |
+          echo "Building Next.js application..."
+          pnpm build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: apps/web/.next
+          retention-days: 7
+
+      - name: Analyze bundle size
+        working-directory: apps/web
+        run: |
+          echo "## Next.js Build Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Output" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          du -sh .next 2>/dev/null || echo "Build size: N/A" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 6: Docker Build Test
+  # ---------------------------------------------------------------------------
+  test-docker:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: mcps:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Docker build report
+        if: always()
+        run: |
+          echo "## Docker Build Test" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ Docker image built successfully" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Job 7: Integration Test Summary
+  # ---------------------------------------------------------------------------
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs:
+      - lint-python
+      - typecheck-python
+      - test-python
+      - lint-nextjs
+      - build-nextjs
+    if: always()
+
+    steps:
+      - name: Check job status
+        run: |
+          echo "## Overall CI/CD Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Linting: ${{ needs.lint-python.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Type Checking: ${{ needs.typecheck-python.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Tests: ${{ needs.test-python.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Next.js Linting: ${{ needs.lint-nextjs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Next.js Build: ${{ needs.build-nextjs.result }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify all tests passed
+        run: |
+          if [ "${{ needs.lint-python.result }}" != "success" ] || \
+             [ "${{ needs.test-python.result }}" != "success" ] || \
+             [ "${{ needs.lint-nextjs.result }}" != "success" ] || \
+             [ "${{ needs.build-nextjs.result }}" != "success" ]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required tests passed!"

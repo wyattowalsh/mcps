@@ -1,0 +1,59 @@
+name: Documentation Improvement
+description: Suggest improvements to documentation or add missing docs
+title: "[DOCS] "
+labels: ["documentation"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve our documentation! Your feedback helps make MCPS more accessible.
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation you want to improve? (URL or file path)
+      placeholder: |
+        - URL: https://mcps.readthedocs.io/...
+        - OR File: docs/source/...rst
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: Current Issue
+      description: What's missing, unclear, or incorrect?
+      placeholder: |
+        - The installation instructions don't mention...
+        - This feature isn't documented
+        - There's a typo in...
+    validations:
+      required: true
+
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested Improvement
+      description: How can we improve this?
+      placeholder: "We should add information about..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any context that would help, such as links to related docs
+      placeholder: "Related to feature X, see also..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Would you like to contribute?
+      options:
+        - label: I would like to submit a PR to fix this

@@ -1,0 +1,304 @@
+name: MCPS Data Ingestion Pipeline
+
+# =============================================================================
+# Triggers - When to run this workflow
+# =============================================================================
+on:
+  # Scheduled runs - Daily at midnight UTC
+  schedule:
+    - cron: '0 0 * * *'  # Daily at 00:00 UTC
+
+  # Manual trigger via GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: 'Ingestion strategy to use'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - github
+          - npm
+          - pypi
+          - docker
+      target:
+        description: 'Target to ingest'
+        required: false
+        default: 'all'
+        type: string
+      commit_database:
+        description: 'Commit database changes if < 100MB'
+        required: false
+        default: true
+        type: boolean
+
+# =============================================================================
+# Permissions - Minimal permissions required
+# =============================================================================
+permissions:
+  contents: write  # Allow pushing database commits
+  actions: read    # Read workflow artifacts
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  PYTHON_VERSION: '3.12'
+  UV_VERSION: 'latest'
+  DATABASE_PATH: './data/mcps.db'
+
+# =============================================================================
+# Jobs
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Data Ingestion
+  # ---------------------------------------------------------------------------
+  ingest:
+    name: Run Data Harvester
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hour timeout for large ingestions
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Checkout & Setup
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper git operations
+          lfs: false      # We don't use Git LFS
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install UV package manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      # -----------------------------------------------------------------------
+      # Dependency Installation
+      # -----------------------------------------------------------------------
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-python-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-
+
+      - name: Install Python dependencies
+        run: |
+          uv sync --frozen --no-dev
+          echo "✓ Python dependencies installed"
+
+      # -----------------------------------------------------------------------
+      # Database Preparation
+      # -----------------------------------------------------------------------
+      - name: Restore previous database (if exists)
+        id: restore-db
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DATABASE_PATH }}
+          key: mcps-db-${{ github.sha }}
+          restore-keys: |
+            mcps-db-
+
+      - name: Create data directory
+        run: |
+          mkdir -p data logs
+          chmod 755 data logs
+
+      - name: Run database migrations
+        run: |
+          uv run alembic upgrade head
+          echo "✓ Database migrations applied"
+
+      # -----------------------------------------------------------------------
+      # Data Ingestion
+      # -----------------------------------------------------------------------
+      - name: Run data ingestion
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LOG_LEVEL: INFO
+        run: |
+          echo "Starting data ingestion..."
+          echo "Strategy: ${{ inputs.strategy || 'auto' }}"
+          echo "Target: ${{ inputs.target || 'all' }}"
+
+          # Run ingestion with error handling
+          uv run python -m packages.harvester.cli ingest \
+            --strategy "${{ inputs.strategy || 'auto' }}" \
+            --target "${{ inputs.target || 'all' }}" \
+            2>&1 | tee logs/ingest-$(date +%Y%m%d).log
+
+          echo "✓ Data ingestion completed"
+
+      # -----------------------------------------------------------------------
+      # Data Export & Validation
+      # -----------------------------------------------------------------------
+      - name: Export data to analytical formats
+        run: |
+          mkdir -p data/exports
+
+          # Export to Parquet
+          uv run python -m packages.harvester.cli export \
+            --format parquet \
+            --destination ./data/exports
+
+          # Export to JSONL (for LLM training)
+          uv run python -m packages.harvester.cli export \
+            --format jsonl \
+            --destination ./data/exports
+
+          echo "✓ Data exported successfully"
+
+      - name: Generate ingestion report
+        run: |
+          cat > data/ingestion-report.txt <<EOF
+          MCPS Data Ingestion Report
+          ==========================
+          Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Workflow: ${{ github.workflow }}
+          Run ID: ${{ github.run_id }}
+          Strategy: ${{ inputs.strategy || 'auto' }}
+          Target: ${{ inputs.target || 'all' }}
+
+          Database Statistics:
+          EOF
+
+          # Add database stats
+          uv run python -c "
+          import sqlite3
+          conn = sqlite3.connect('${{ env.DATABASE_PATH }}')
+          cursor = conn.cursor()
+
+          tables = ['server', 'tool', 'contributor', 'dependency', 'release']
+          for table in tables:
+              try:
+                  count = cursor.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
+                  print(f'{table.capitalize()}: {count:,} records')
+              except:
+                  pass
+
+          # Database size
+          import os
+          size = os.path.getsize('${{ env.DATABASE_PATH }}')
+          print(f'\nDatabase size: {size / 1024 / 1024:.2f} MB')
+          conn.close()
+          " >> data/ingestion-report.txt
+
+          cat data/ingestion-report.txt
+
+      # -----------------------------------------------------------------------
+      # Artifact Upload
+      # -----------------------------------------------------------------------
+      - name: Check database size
+        id: db-size
+        run: |
+          DB_SIZE=$(stat -f%z "${{ env.DATABASE_PATH }}" 2>/dev/null || stat -c%s "${{ env.DATABASE_PATH }}")
+          DB_SIZE_MB=$((DB_SIZE / 1024 / 1024))
+          echo "size_mb=${DB_SIZE_MB}" >> $GITHUB_OUTPUT
+          echo "Database size: ${DB_SIZE_MB} MB"
+
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcps-database-${{ github.run_number }}
+          path: |
+            ${{ env.DATABASE_PATH }}
+            ${{ env.DATABASE_PATH }}-wal
+            ${{ env.DATABASE_PATH }}-shm
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload export artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcps-exports-${{ github.run_number }}
+          path: data/exports/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload ingestion report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-report-${{ github.run_number }}
+          path: data/ingestion-report.txt
+          retention-days: 90
+
+      # -----------------------------------------------------------------------
+      # Optional: Commit Database (if < 100MB)
+      # -----------------------------------------------------------------------
+      - name: Commit database changes
+        if: |
+          inputs.commit_database != false &&
+          steps.db-size.outputs.size_mb < 100
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Add database file
+          git add ${{ env.DATABASE_PATH }}
+
+          # Check if there are changes
+          if git diff --staged --quiet; then
+            echo "No database changes to commit"
+          else
+            git commit -m "chore: update database from scheduled ingestion
+
+            - Workflow: ${{ github.workflow }}
+            - Run ID: ${{ github.run_id }}
+            - Strategy: ${{ inputs.strategy || 'auto' }}
+            - Database size: ${{ steps.db-size.outputs.size_mb }} MB
+            - Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+
+            git push
+            echo "✓ Database committed and pushed"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Summary
+      # -----------------------------------------------------------------------
+      - name: Generate job summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## MCPS Data Ingestion Summary
+
+          ### Configuration
+          - **Strategy**: ${{ inputs.strategy || 'auto' }}
+          - **Target**: ${{ inputs.target || 'all' }}
+          - **Database Size**: ${{ steps.db-size.outputs.size_mb }} MB
+
+          ### Artifacts
+          - Database: \`mcps-database-${{ github.run_number }}\`
+          - Exports: \`mcps-exports-${{ github.run_number }}\`
+          - Logs: \`ingestion-logs-${{ github.run_number }}\`
+
+          ### Next Steps
+          - Download artifacts from the Actions tab
+          - Review ingestion logs for errors
+          - Verify data quality in exports
+
+          ---
+          *Generated by workflow run [\#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*
+          EOF

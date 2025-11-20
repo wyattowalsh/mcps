@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD): mcps (Model Context Protocol System)
 
-<table><tbody><tr><td><p><strong><span class="selected">Metadata</span></strong></p></td><td><p><strong><span class="selected">Details</span></strong></p></td></tr><tr><td><p><strong><span class="selected">Project Name</span></strong></p></td><td><p><code><span class="selected">mcps</span></code></p></td></tr><tr><td><p><strong><span class="selected">Version</span></strong></p></td><td><p><span class="selected">2.4.0 (Comprehensive Knowledge Graph Edition)</span></p></td></tr><tr><td><p><strong><span class="selected">Status</span></strong></p></td><td><p><span class="selected">Approved for Agentic Implementation</span></p></td></tr><tr><td><p><strong><span class="selected">Owner</span></strong></p></td><td><p><span class="selected">Wyatt Walsh</span></p></td></tr><tr><td><p><strong><span class="selected">Target Audience</span></strong></p></td><td><p><span class="selected">AI Researchers, LLM Integrators, DevOps Engineers, Data Scientists, Security Auditors</span></p></td></tr><tr><td><p><strong><span class="selected">Design Aesthetic</span></strong></p></td><td><p><span class="selected">Technical, Clean, Data-Dense, Accent Color: </span><code><span class="selected">#6a9fb5</span></code></p></td></tr></tbody></table>
+<table><tbody><tr><td><p><strong><span class="selected">Metadata</span></strong></p></td><td><p><strong><span class="selected">Details</span></strong></p></td></tr><tr><td><p><strong><span class="selected">Project Name</span></strong></p></td><td><p><code><span class="selected">mcps</span></code></p></td></tr><tr><td><p><strong><span class="selected">Version</span></strong></p></td><td><p><span class="selected">3.0.0 (Enhanced Implementation Edition)</span></p></td></tr><tr><td><p><strong><span class="selected">Status</span></strong></p></td><td><p><span class="selected">Production-Ready with Active Enhancement</span></p></td></tr><tr><td><p><strong><span class="selected">Owner</span></strong></p></td><td><p><span class="selected">Wyatt Walsh</span></p></td></tr><tr><td><p><strong><span class="selected">Target Audience</span></strong></p></td><td><p><span class="selected">AI Researchers, LLM Integrators, DevOps Engineers, Data Scientists, Security Auditors</span></p></td></tr><tr><td><p><strong><span class="selected">Design Aesthetic</span></strong></p></td><td><p><span class="selected">Technical, Clean, Data-Dense, Accent Color: </span><code><span class="selected">#6a9fb5</span></code></p></td></tr></tbody></table>
 
 ## 1\. Executive Summary
 
@@ -10,7 +10,46 @@ Unlike traditional package managers or GitHub-centric crawlers, `mcps` treats th
 
 The system leverages a **SQLite-first** architecture (`sqlite3` + `sqlite-vec`) to ensure zero-latency, local-first analytics. By avoiding heavy SaaS dependencies, it remains portable and reproducible. It persists granular metadata—down to individual prompt arguments, Python dependency trees, semantic release history, and semantic vector embeddings. This entire dataset is orchestrated by a robust, resilient Python ETL (Extract, Transform, Load) engine and presented via a high-performance Next.js 15 Dashboard, bridging the gap between raw protocol data and actionable developer intelligence.
 
-## 2\. Problem Statement
+## 2\. Implementation Status
+
+**Current Version:** v3.0.0 - All core features successfully implemented and operational.
+
+### ✅ Completed Phases
+
+| Phase | Component | Status | Implementation Notes |
+|-------|-----------|--------|---------------------|
+| **Phase 0** | Monorepo Infrastructure | ✅ Complete | UV dependency management, Ruff linting, Alembic migrations |
+| **Phase 1** | Data Modeling | ✅ Complete | SQLModel with Pydantic v2, full schema with relationships |
+| **Phase 2** | Universal Harvester | ✅ Complete | 5 adapters: GitHub, NPM, PyPI, Docker, HTTP/SSE |
+| **Phase 3** | Deep Analysis | ✅ Complete | AST security scanning, dependency extraction, risk scoring |
+| **Phase 4** | Data Exports | ✅ Complete | Parquet, JSONL, CSV export formats |
+| **Phase 5** | Dashboard | ✅ Complete | Next.js 15 with App Router, SQLite integration |
+| **Phase 6** | Deployment | ✅ Complete | Multi-stage Docker, docker-compose with volumes |
+| **Phase 7** | E2E Verification | ✅ Complete | Integration tests, CLI validation |
+| **Phase 8** | RESTful API | ✅ Complete | FastAPI with auth, rate limiting, CRUD operations |
+| **Phase 9** | Background Tasks | ✅ Complete | APScheduler with auto-refresh, health recalculation |
+| **Phase 10** | Documentation | ✅ Complete | Sphinx with MyST, autodoc2, Mermaid diagrams |
+
+### 🔧 Operational Features
+
+- **Database Operations**: Full CRUD, bulk updates, refresh, prune stale servers
+- **API Endpoints**: 15+ RESTful endpoints with OpenAPI documentation
+- **Authentication**: API key-based auth with role-based access control
+- **Rate Limiting**: SlowAPI integration (configurable per-endpoint limits)
+- **Background Scheduler**: 4 automated tasks (refresh, health scores, risk levels, cleanup)
+- **Health Monitoring**: System health checks, task progress tracking
+- **Documentation Site**: Comprehensive Sphinx docs with interactive guides
+
+### 📊 Current Capabilities
+
+- **Multi-Source Ingestion**: GitHub, NPM, PyPI, Docker Hub, HTTP endpoints
+- **Deep Metadata**: Tools, resources, prompts, dependencies, contributors, releases
+- **Security Analysis**: AST-based risk detection, dangerous pattern identification
+- **Health Scoring**: Algorithmic quality assessment (0-100 scale)
+- **Search**: Full-text search across servers and tools
+- **Export Formats**: Parquet (analytics), JSONL (LLM training), CSV (networks)
+
+## 3\. Problem Statement
 
 The rapid adoption of LLMs has created a fragmented ecosystem of tools that `mcps` aims to unify. The specific pain points include:
 
@@ -78,39 +117,72 @@ mcps/
 #### **Backend & Data Engineering (Python 3.12+)**
 
 - **Core Database:** **SQLite** (WAL mode enabled, `PRAGMA foreign_keys = ON`).
-    
+
     - _Why:_ Provides ACID compliance in a single file. Easy to replicate, backup to S3, or commit to Git LFS. Zero network latency for complex joins.
-        
+
 - **Vector Engine:** **sqlite-vec**.
-    
+
     - _Why:_ Eliminates the need for a separate vector DB (Pinecone/Weaviate), keeping the stack "lite" and self-contained.
-        
+
 - **ORM:** **SQLModel** (Pydantic v2 + SQLAlchemy 2.0).
-    
+
     - _Why:_ Combines Pydantic's validation (crucial for messy scraped data) with SQLAlchemy's relational power.
-        
+
+- **API Framework:** **FastAPI** with async SQLAlchemy sessions.
+
+    - _Why:_ High-performance async API with automatic OpenAPI documentation and type validation.
+
+- **Authentication & Security:** **SlowAPI** (rate limiting), custom API key authentication.
+
+    - _Why:_ Protects endpoints from abuse while maintaining simplicity for internal/enterprise use.
+
+- **Task Scheduler:** **APScheduler** (AsyncIO backend).
+
+    - _Why:_ Reliable cron-like scheduling for background maintenance tasks without external dependencies.
+
 - **Resilience:** **Tenacity**.
-    
+
     - _Why:_ Network scraping is inherently flaky. Exponential backoff prevents API bans and ensures eventual consistency.
-        
+
 - **Package Inspection:** `build`, `pkginfo`, `tarfile`, `docker-py`.
-    
+
     - _Why:_ We must inspect artifacts _statically_ without executing them to prevent Arbitrary Code Execution (ACE) during ingestion.
-        
+
 - **Static Analysis:** `ast` (Python), `tree-sitter` (TypeScript).
-    
+
     - _Why:_ Regex is insufficient for understanding code logic. ASTs allow us to map import graphs accurately.
-        
+
+- **Logging:** **Loguru** for structured, colorized logging.
+
+    - _Why:_ Developer-friendly logging with automatic context and minimal configuration.
 
 #### **Frontend (TypeScript)**
 
 - **Framework:** **Next.js 15** (App Router).
-    
+
     - _Why:_ Server Components allow direct database access (via `better-sqlite3`) for read-heavy dashboard views, bypassing API serialization overhead.
-        
+
 - **Visualization:** **D3.js** (Force Simulation) + **Visx**.
-    
+
     - _Why:_ D3 provides the low-level physics needed for the dependency graph, while Visx handles standard accessible charts.
+
+#### **Documentation System**
+
+- **Documentation Generator:** **Sphinx** with MyST-Parser.
+
+    - _Why:_ Industry-standard Python documentation with Markdown support via MyST.
+
+- **API Documentation:** **autodoc2** for automatic API reference generation.
+
+    - _Why:_ Keeps API docs in sync with code without manual maintenance.
+
+- **Diagrams:** **Mermaid** support via `sphinxcontrib-mermaid`.
+
+    - _Why:_ Inline diagrams-as-code for architecture visualization.
+
+- **Theme:** **Furo** theme for modern, mobile-friendly docs.
+
+    - _Why:_ Clean, accessible design optimized for technical documentation.
         
 
 ## 4\. Core Features & Ingestion Mechanics
@@ -431,7 +503,109 @@ clean:
 
 ## 7\. Functional Requirements (Detailed)
 
-### 7.1 Handling "Ghost" Servers (Non-GitHub)
+### 7.1 Database Update Operations
+
+The system provides comprehensive CRUD operations and maintenance capabilities:
+
+#### **Create, Read, Update, Delete (CRUD)**
+
+- **Create:** Not directly exposed (servers are ingested via harvester)
+- **Read:** Full querying with filters (host_type, risk_level, verified status)
+- **Update:** Single server updates, bulk updates with filter conditions
+- **Delete:** Admin-only soft/hard delete with cascade to related entities
+
+#### **Refresh Operations**
+
+- **Single Refresh:** Re-harvest a specific server by URL to update metadata
+- **Auto-Refresh:** Background task refreshes servers every 7 days automatically
+- **Batch Refresh:** Bulk refresh servers matching filter criteria
+
+#### **Bulk Update Operations**
+
+- **Filter-Based:** Update multiple servers matching complex filter conditions
+- **Field Updates:** Modify stars, health_score, risk_level, categories, etc.
+- **Validation:** Pydantic validation ensures data integrity during bulk operations
+
+#### **Maintenance Operations**
+
+- **Prune Stale Servers:** Remove servers inactive for N days (default: 180)
+- **Health Score Recalculation:** Daily automated recalculation for all servers
+- **Risk Level Updates:** Daily automated security re-assessment
+- **Statistics Generation:** Real-time stats on server counts, distributions, etc.
+
+### 7.2 RESTful API Features
+
+#### **Authentication & Authorization**
+
+- **API Key Authentication:** Header-based (`X-API-Key`) authentication
+- **Role-Based Access:** Different access levels (development, admin)
+- **Endpoint Protection:** All endpoints require valid API key
+- **Admin-Only Operations:** Delete, bulk update, prune require admin role
+
+#### **Rate Limiting**
+
+- **Per-Endpoint Limits:** Configurable limits (e.g., 60/min for reads, 30/min for writes)
+- **IP-Based Tracking:** Limits enforced per remote address
+- **Graceful Degradation:** Returns 429 with retry-after header when exceeded
+
+#### **OpenAPI Documentation**
+
+- **Auto-Generated Docs:** FastAPI generates interactive Swagger UI at `/docs`
+- **ReDoc Interface:** Alternative documentation at `/redoc`
+- **Type Safety:** Request/response models with Pydantic validation
+
+#### **API Endpoints**
+
+| Endpoint | Method | Rate Limit | Auth | Description |
+|----------|--------|------------|------|-------------|
+| `/health` | GET | 100/min | None | Health check |
+| `/servers` | GET | 60/min | API Key | List servers with pagination |
+| `/servers/{id}` | GET | 60/min | API Key | Get server details |
+| `/servers/{id}` | PUT | 30/min | API Key | Update server |
+| `/servers/{id}` | DELETE | 20/min | Admin | Delete server |
+| `/servers/refresh` | POST | 10/min | API Key | Refresh server data |
+| `/tools` | GET | 60/min | API Key | List tools |
+| `/search` | GET | 30/min | API Key | Full-text search |
+| `/admin/update-health-scores` | POST | 5/min | Admin | Recalculate all health scores |
+| `/admin/update-risk-levels` | POST | 5/min | Admin | Recalculate all risk levels |
+| `/admin/prune-stale` | POST | 5/min | Admin | Remove stale servers |
+| `/admin/bulk-update` | POST | 5/min | Admin | Bulk update servers |
+| `/admin/stats` | GET | 10/min | Admin | Database statistics |
+
+### 7.3 Background Task Scheduler
+
+#### **Scheduled Tasks**
+
+| Task | Schedule | Purpose |
+|------|----------|---------|
+| Auto-refresh servers | Every 7 days | Re-harvest servers not updated recently |
+| Health score recalculation | Daily at 2 AM | Update quality metrics |
+| Risk level recalculation | Daily at 2:30 AM | Update security assessment |
+| Stale server cleanup | Weekly (Sunday 3 AM) | Remove inactive servers |
+
+#### **Task Management**
+
+- **Progress Tracking:** Real-time progress updates for long-running tasks
+- **Error Handling:** Graceful failure with error logging
+- **Manual Trigger:** Admin can trigger any task on-demand via CLI
+- **Status Monitoring:** View task history, success/failure rates
+
+### 7.4 Health Monitoring
+
+#### **System Health**
+
+- **Database Connectivity:** Check SQLite connection and WAL mode
+- **API Availability:** Health endpoint returns service status
+- **Background Tasks:** Monitor scheduler status and job queue
+
+#### **Metrics Tracking**
+
+- **Server Counts:** Total servers by host_type, risk_level
+- **Tool/Resource Counts:** Distribution of capabilities
+- **Dependency Analysis:** Most common dependencies, version distributions
+- **Quality Metrics:** Average health scores, risk level breakdowns
+
+### 7.5 Handling "Ghost" Servers (Non-GitHub)
 
 - **Scenario:** A user inputs `@smithery/filesystem` (an NPM package) or a direct link to a `.whl` file that has no corresponding public GitHub repository (a "Ghost" server).
     
@@ -519,5 +693,131 @@ _Specific instructions for AI Agents (e.g., Cursor, Windsurf) generating code fr
 ### Protocol D: Context Window Optimization
 
 - **Constraint:** The codebase is a Monorepo.
-    
+
 - **Instruction:** When asked to work on the backend, only read/index files in `packages/harvester` and `apps/api`. Do not pollute the context window with `apps/web` frontend code unless explicitly integrating an API endpoint.
+
+## 10\. Enhancement Roadmap (Future Phases)
+
+This section outlines potential future enhancements to extend MCPS capabilities beyond the current implementation.
+
+### Phase 11: Real-Time Communication (Q1 2025)
+
+**Objective:** Add WebSocket support for real-time updates to dashboard and external clients.
+
+- **WebSocket Server:** Implement with `fastapi-websocket` or standalone `websockets` server
+- **Event Streaming:** Broadcast server updates, ingestion progress, health score changes
+- **Client SDK:** TypeScript/Python SDK for subscribing to real-time events
+- **Use Cases:**
+  - Live dashboard updates during batch ingestion
+  - Real-time notifications for security alerts
+  - Progress tracking for long-running tasks
+
+**Tech Stack:** `fastapi.WebSocket`, Redis for pub/sub (optional), Server-Sent Events (SSE) fallback
+
+### Phase 12: Advanced Search & Discovery (Q2 2025)
+
+**Objective:** Enhance search capabilities with Elasticsearch and vector search improvements.
+
+- **Elasticsearch Integration:** Full-text search with fuzzy matching, faceting, aggregations
+- **Enhanced Vector Search:** Upgrade to `sqlite-vec` 2.0 or evaluate ChromaDB/Qdrant
+- **Hybrid Search:** Combine keyword, semantic, and faceted search with re-ranking
+- **Search Features:**
+  - Autocomplete suggestions
+  - Faceted navigation (filter by multiple dimensions)
+  - "Similar to this" recommendations
+  - Trending searches analytics
+
+**Tech Stack:** Elasticsearch 8.x, `sentence-transformers` for local embeddings
+
+### Phase 13: Machine Learning & Intelligence (Q2-Q3 2025)
+
+**Objective:** Add ML-powered features for classification, anomaly detection, and recommendations.
+
+- **Auto-Classification:** Train classifier to categorize servers (Database, Filesystem, AI, etc.)
+- **Quality Prediction:** ML model to predict health_score from metadata
+- **Anomaly Detection:** Identify suspicious servers (malware, abandoned projects)
+- **Recommendation Engine:** "Users who used X also used Y"
+- **Dependency Vulnerability Scanning:** Integration with OSV/CVE databases
+
+**Tech Stack:** `scikit-learn`, `transformers`, `torch` (optional), OSV API
+
+### Phase 14: Multi-Tenancy & Enterprise Features (Q3 2025)
+
+**Objective:** Support multiple organizations with isolated data and custom policies.
+
+- **Organization Model:** Separate schemas or row-level security
+- **Custom Adapters:** Allow organizations to add private GitLab/Bitbucket sources
+- **Access Control:** Fine-grained permissions (read/write/admin per organization)
+- **Audit Logging:** Track all API calls, data modifications, user actions
+- **SSO Integration:** SAML/OAuth2 for enterprise authentication
+- **Custom Risk Policies:** Organization-specific risk scoring rules
+
+**Tech Stack:** PostgreSQL (for multi-tenancy), `authlib`, RBAC framework
+
+### Phase 15: Performance & Scale (Q4 2025)
+
+**Objective:** Optimize for 100K+ servers with distributed processing.
+
+- **Redis Caching:** Cache frequently accessed servers, search results
+- **Rate Limit with Redis:** Distributed rate limiting across multiple API instances
+- **Database Sharding:** Partition servers by host_type or geographic region
+- **Async Ingestion:** Distributed task queue (Celery/RQ) for parallel harvesting
+- **CDN Integration:** Serve static exports via CloudFront/Cloudflare
+- **Prometheus Metrics:** Export metrics for monitoring (request rates, ingestion throughput)
+- **Read Replicas:** SQLite read replicas or migrate to PostgreSQL
+
+**Tech Stack:** Redis, Celery/RQ, Prometheus, Grafana, PostgreSQL (migration)
+
+### Phase 16: GraphQL API (Q4 2025)
+
+**Objective:** Provide flexible querying with GraphQL alongside REST API.
+
+- **GraphQL Schema:** Define schema for Server, Tool, Resource, Prompt, Dependency
+- **Nested Queries:** Allow fetching servers with tools, dependencies in single query
+- **Pagination:** Cursor-based pagination for large result sets
+- **Subscriptions:** Real-time updates via GraphQL subscriptions
+- **DataLoader:** Batch and cache database queries to avoid N+1 problems
+
+**Tech Stack:** `strawberry-graphql` or `graphene-python`, `aiodataloader`
+
+### Phase 17: Plugin System & Extensibility (2026)
+
+**Objective:** Allow third-party developers to extend MCPS with custom adapters and analyzers.
+
+- **Plugin Architecture:** Define plugin interface for adapters, analyzers, exporters
+- **Plugin Registry:** Marketplace for community-contributed plugins
+- **Sandboxing:** Run untrusted plugins in containers or restricted environments
+- **Plugin API:** Stable API contract with versioning
+- **Examples:**
+  - Adapter for proprietary package registries
+  - Custom security scanners
+  - Export formats (Excel, Neo4j, etc.)
+
+**Tech Stack:** `pluggy`, Docker for sandboxing, semantic versioning
+
+### Phase 18: Developer Experience Enhancements (2026)
+
+**Objective:** Improve CLI and developer tools for easier interaction.
+
+- **CLI Auto-Completion:** Bash/Zsh completion scripts for all commands
+- **Interactive Mode:** REPL-like interface for exploring data
+- **VSCode Extension:** Syntax highlighting, autocomplete for mcp.json
+- **GitHub Action:** Pre-built action for CI/CD ingestion workflows
+- **Python/TypeScript SDKs:** Idiomatic client libraries for programmatic access
+- **CLI Plugins:** Extend CLI with custom commands
+
+**Tech Stack:** `click-completion`, `prompt_toolkit`, VSCode Extension API
+
+### Prioritization Criteria
+
+Features will be prioritized based on:
+
+1. **User Demand:** Feedback from GitHub issues, community surveys
+2. **Impact:** Features that unlock new use cases or significantly improve existing ones
+3. **Complexity:** Balance between effort required and value delivered
+4. **Dependencies:** Technical prerequisites (e.g., PostgreSQL migration enables multi-tenancy)
+5. **Maintenance:** Preference for solutions with minimal ongoing maintenance burden
+
+### Community Contributions
+
+The project welcomes community contributions for any roadmap items. High-priority items will be marked as "good first issue" or "help wanted" on GitHub to encourage participation.

@@ -1,0 +1,19 @@
+# Treat SQLite database files as binary to prevent Git from attempting to diff them
+*.db binary
+*.db-wal binary
+*.db-shm binary
+*.db-journal binary
+
+# Ensure consistent line endings
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Parquet files are binary
+*.parquet binary

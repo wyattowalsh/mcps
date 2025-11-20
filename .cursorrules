@@ -1,0 +1,59 @@
+# MCPS Project Rules for AI Coding Assistants
+
+## Project Architecture
+- This is a monorepo with strict separation between packages
+- `packages/harvester/` contains the Python ETL engine
+- `apps/web/` contains the Next.js frontend
+- `apps/api/` contains the FastAPI backend (when created)
+
+## Critical Rules
+
+### Dependency Boundaries
+- **NEVER** import from `apps/web` when editing `packages/harvester`
+- Backend (Python) and Frontend (TypeScript) must remain decoupled
+- Shared types should be defined via the database schema
+
+### Python Execution
+- **ALWAYS** use `uv run` for Python commands
+- Examples:
+  - `uv run python -m packages.harvester.cli`
+  - `uv run alembic upgrade head`
+  - `uv run pytest`
+
+### Path Handling
+- **PREFER** `pathlib` over `os.path`
+- Use `Path(__file__).parent` for relative paths
+- Always use absolute paths in configuration
+
+### Database Safety
+- **NEVER** use `SQLModel.metadata.create_all()` in production
+- **ALWAYS** use Alembic migrations for schema changes
+- Run `uv run alembic revision --autogenerate` after model changes
+
+### Security
+- **NEVER** import downloaded modules to inspect them (use AST parsing)
+- **NEVER** execute untrusted code during harvesting
+- Always validate and sanitize external data
+
+### Code Quality
+- Follow type hints for all function signatures
+- Use Pydantic models for validation
+- Prefer explicit over implicit
+
+## Coding Standards
+
+### Python
+- Line length: 100 characters
+- Use f-strings for formatting
+- Async by default for I/O operations
+- Use `loguru` for logging, not `print()`
+
+### TypeScript
+- Use TypeScript strict mode
+- Prefer server components in Next.js when possible
+- Use `better-sqlite3` for direct DB reads (read-only)
+
+## Workflow
+1. Make changes to models → Run alembic autogenerate → Review migration
+2. Write code → Run linters → Write tests → Commit
+3. For new features: Plan → Implement → Test → Document

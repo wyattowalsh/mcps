@@ -5,8 +5,8 @@ from datetime import datetime, UTC
 
 from sqlmodel import select
 
-from mcps.database import async_session_maker, init_db
-from mcps.models import Contributor, Repository
+from packages.harvester.database import async_session_maker, init_db
+from packages.harvester.models import Contributor, Repository
 
 
 async def example_operations():
