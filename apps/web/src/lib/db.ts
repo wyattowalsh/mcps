@@ -213,6 +213,7 @@ export async function getStats(): Promise<DashboardStats> {
   const { data: servers, error: serversError } = await supabase
     .from('server')
     .select('health_score, stars, host_type, risk_level')
+    .returns<Array<{ health_score: number; stars: number; host_type: HostType; risk_level: RiskLevel }>>()
 
   const { count: toolCount } = await supabase.from('tool').select('*', { count: 'exact', head: true })
 
